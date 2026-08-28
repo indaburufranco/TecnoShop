@@ -437,6 +437,49 @@ function addOrder(email: string, order: Order) {
   }
 }
 
+// ── Sesión, carrito y favoritos (persistidos en localStorage) ─────────────────
+const SESSION_KEY = 'tecnostore_session'
+const CART_KEY = 'tecnostore_cart'
+const WISHLIST_KEY = 'tecnostore_wishlist'
+
+function loadSession(): User {
+  try {
+    const email = localStorage.getItem(SESSION_KEY)
+    if (!email) return null
+    const found = loadUsers()[email.toLowerCase()]
+    if (!found) return null
+    return { name: found.name, email: email.toLowerCase(), isAdmin: found.isAdmin }
+  } catch {
+    return null
+  }
+}
+
+function saveSession(user: User) {
+  try {
+    if (user) localStorage.setItem(SESSION_KEY, user.email)
+    else localStorage.removeItem(SESSION_KEY)
+  } catch {
+    // sin persistencia si localStorage falla
+  }
+}
+
+function loadJSON<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key)
+    return raw ? JSON.parse(raw) : fallback
+  } catch {
+    return fallback
+  }
+}
+
+function saveJSON(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value))
+  } catch {
+    // sin persistencia si localStorage falla
+  }
+}
+
 // ── Responsive helper ──────────────────────────────────────────────────────────
 function useIsMobile(breakpoint = 768) {
   const [isMobile, setIsMobile] = useState(
@@ -472,6 +515,7 @@ function Navbar({
   onCategorySelect,
   onOpenCart,
   onOpenFavorites,
+  onOpenOrders,
 }: {
   onOpenLogin: () => void
   user: User
@@ -482,6 +526,7 @@ function Navbar({
   onCategorySelect: (c: string | null) => void
   onOpenCart: () => void
   onOpenFavorites: () => void
+  onOpenOrders: () => void
 }) {
   const [catOpen, setCatOpen] = useState(false)
   const [userOpen, setUserOpen] = useState(false)
@@ -737,7 +782,7 @@ function Navbar({
             <div style={{ height: 1, background: '#1e2535', marginBottom: 10 }} />
             {[
               { icon: '❤️', label: `Favoritos (${wishlistCount})`, onClick: () => { onOpenFavorites(); setUserOpen(false) } },
-              { icon: '📦', label: 'Mis pedidos' },
+              { icon: '📦', label: 'Mis pedidos', onClick: () => { onOpenOrders(); setUserOpen(false) } },
               { icon: '⚙️', label: 'Configuración' },
               ...(user.isAdmin ? [{ icon: '🛠️', label: 'Administrar productos' }] : []),
             ].map(item => (
@@ -1444,6 +1489,79 @@ function CartPanel({
   )
 }
 
+// ── Historial de pedidos ────────────────────────────────────────────────────────
+const STATUS_COLOR: Record<OrderStatus, string> = {
+  'Confirmado': '#00c8ff',
+  'En preparación': '#f59e0b',
+  'Enviado': '#a78bfa',
+  'Entregado': '#10b981',
+}
+
+function OrdersPanel({ user, onClose }: { user: { name: string; email: string }; onClose: () => void }) {
+  const isMobile = useIsMobile()
+  const orders = loadOrders(user.email)
+
+  return (
+    <>
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 150, backdropFilter: 'blur(2px)' }} />
+      <div style={{
+        position: 'fixed', top: 0, right: 0, bottom: 0, width: isMobile ? '100vw' : 440,
+        background: '#0e1117', borderLeft: '1px solid #1e2535', zIndex: 151,
+        display: 'flex', flexDirection: 'column', boxShadow: '-20px 0 60px rgba(0,0,0,0.5)',
+        animation: 'slideIn 0.25s ease',
+      }}>
+        <style>{`@keyframes slideIn { from { transform: translateX(100%) } to { transform: translateX(0) } }`}</style>
+
+        <div style={{ padding: '20px 24px', borderBottom: '1px solid #1e2535', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 700, fontSize: 20, color: '#e8eaf0' }}>📦 Mis pedidos</div>
+            <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>{orders.length} {orders.length === 1 ? 'pedido' : 'pedidos'}</div>
+          </div>
+          <button onClick={onClose} style={{ background: '#161b27', border: '1px solid #1e2535', borderRadius: 8, width: 36, height: 36, cursor: 'pointer', color: '#6b7280', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+        </div>
+
+        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {orders.length === 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#6b7280' }}>
+              <div style={{ fontSize: 52, marginBottom: 16 }}>📦</div>
+              <div style={{ fontFamily: 'Outfit, sans-serif', fontSize: 18, fontWeight: 600, color: '#4b5563' }}>Todavía no hiciste ningún pedido</div>
+              <div style={{ fontSize: 13, marginTop: 6, textAlign: 'center' }}>Cuando completes una compra, aparece acá.</div>
+            </div>
+          ) : orders.map(order => (
+            <div key={order.id} style={{ background: '#161b27', border: '1px solid #1e2535', borderRadius: 12, padding: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+                <div>
+                  <div style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 700, fontSize: 14, color: '#e8eaf0' }}>{order.id}</div>
+                  <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>
+                    {new Date(order.date).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </div>
+                </div>
+                <span style={{
+                  fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 999,
+                  color: STATUS_COLOR[order.status], background: STATUS_COLOR[order.status] + '1a',
+                  border: `1px solid ${STATUS_COLOR[order.status]}44`,
+                }}>{order.status}</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
+                {order.items.map((it, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#9ca3af' }}>
+                    <span>{it.qty}× {it.name}</span>
+                    <span>${(it.price * it.qty).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 10, borderTop: '1px solid #1e2535' }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: '#e8eaf0' }}>Total</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: '#00c8ff' }}>${order.total.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </>
+  )
+}
+
 // ── Checkout Modal ───────────────────────────────────────────────────────────
 function CheckoutModal({
   total,
@@ -1787,15 +1905,20 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (u: Us
 
 // ── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [user, setUser] = useState<User>(null)
+  const [user, setUser] = useState<User>(() => loadSession())
   const [loginOpen, setLoginOpen] = useState(false)
   const [cartOpen, setCartOpen] = useState(false)
-  const [cart, setCart] = useState<Cart>({})
-  const [wishlist, setWishlist] = useState<number[]>([])
+  const [cart, setCart] = useState<Cart>(() => loadJSON(CART_KEY, {}))
+  const [wishlist, setWishlist] = useState<number[]>(() => loadJSON(WISHLIST_KEY, []))
+
+  useEffect(() => saveSession(user), [user])
+  useEffect(() => saveJSON(CART_KEY, cart), [cart])
+  useEffect(() => saveJSON(WISHLIST_KEY, wishlist), [wishlist])
   const [searchQuery, setSearchQuery] = useState('')
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [showFavorites, setShowFavorites] = useState(false)
+  const [ordersOpen, setOrdersOpen] = useState(false)
   const [minPrice, setMinPrice] = useState('')
   const [maxPrice, setMaxPrice] = useState('')
   const [checkoutOpen, setCheckoutOpen] = useState(false)
@@ -1884,6 +2007,7 @@ export default function App() {
         onCategorySelect={handleCategorySelect}
         onOpenCart={() => setCartOpen(true)}
         onOpenFavorites={handleOpenFavorites}
+        onOpenOrders={() => setOrdersOpen(true)}
       />
 
       {selectedProduct ? (
@@ -2042,11 +2166,9 @@ export default function App() {
             <div style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 800, fontSize: 18, color: '#e8eaf0' }}>
               ⚡ Tecno<span style={{ color: '#00c8ff' }}>Store</span>
             </div>
-            <div style={{ fontSize: 12, color: '#4b5563' }}>© 2026 TecnoStore. Todos los derechos reservados.</div>
+            <div style={{ fontSize: 12, color: '#4b5563' }}>© {new Date().getFullYear()} TecnoStore. Sitio de demostración — no se realizan cobros ni envíos reales.</div>
             <div style={{ display: 'flex', gap: 20, fontSize: 13, color: '#6b7280' }}>
-              {['Términos', 'Privacidad', 'Contacto'].map(l => (
-                <span key={l} style={{ cursor: 'pointer' }} onMouseEnter={e => (e.currentTarget.style.color = '#00c8ff')} onMouseLeave={e => (e.currentTarget.style.color = '#6b7280')}>{l}</span>
-              ))}
+              <a href="mailto:indaburufranco@gmail.com" style={{ color: 'inherit', textDecoration: 'none' }} onMouseEnter={e => (e.currentTarget.style.color = '#00c8ff')} onMouseLeave={e => (e.currentTarget.style.color = '#6b7280')}>Contacto</a>
             </div>
           </div>
         </>
@@ -2054,6 +2176,10 @@ export default function App() {
 
       {loginOpen && (
         <LoginModal onClose={() => setLoginOpen(false)} onLogin={setUser} />
+      )}
+
+      {ordersOpen && user && (
+        <OrdersPanel user={user} onClose={() => setOrdersOpen(false)} />
       )}
 
       {cartOpen && (
