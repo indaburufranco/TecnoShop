@@ -1,0 +1,72 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600&display=swap');
+@import 'tailwindcss';
+
+@theme inline {
+  --color-bg: #07090f;
+  --color-surface: #0e1117;
+  --color-surface2: #161b27;
+  --color-border: #1e2535;
+  --color-accent: #00c8ff;
+  --color-accent2: #7c3aed;
+  --color-text: #e8eaf0;
+  --color-muted: #6b7280;
+  --font-display: 'Outfit', sans-serif;
+  --font-body: 'Inter', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: #07090f;
+  color: #e8eaf0;
+  font-family: 'Inter', sans-serif;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: #0e1117;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e2535;
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #00c8ff44;
+}
+
+.font-display {
+  font-family: 'Outfit', sans-serif;
+}
+
+@keyframes shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, #161b27 25%, #1e2535 37%, #161b27 63%);
+  background-size: 800px 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+/* Quitar flechas nativas de los inputs numéricos (filtro de precio) */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}

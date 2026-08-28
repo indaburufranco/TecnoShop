@@ -1,0 +1,12 @@
+{
+  "title": "TecnoStore",
+  "description": "TecnoStore — tienda online de tecnología con categorías de productos, búsqueda, cuentas de usuario con panel de admin, carrito de compras y carrusel de promociones.",
+  "language": "es",
+  "robots": {
+    "index": true
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
