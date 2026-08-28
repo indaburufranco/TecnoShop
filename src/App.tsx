@@ -377,7 +377,7 @@ export interface StoredUser {
   phone?: string
 }
 
-const USERS_KEY = 'tecnostore_users'
+const USERS_KEY = 'tecnoshop_users'
 
 function loadUsers(): Record<string, StoredUser> {
   try {
@@ -413,7 +413,7 @@ export interface Order {
   total: number
 }
 
-const ORDERS_KEY = 'tecnostore_orders'
+const ORDERS_KEY = 'tecnoshop_orders'
 
 function loadOrders(email: string): Order[] {
   try {
@@ -438,9 +438,9 @@ function addOrder(email: string, order: Order) {
 }
 
 // ── Sesión, carrito y favoritos (persistidos en localStorage) ─────────────────
-const SESSION_KEY = 'tecnostore_session'
-const CART_KEY = 'tecnostore_cart'
-const WISHLIST_KEY = 'tecnostore_wishlist'
+const SESSION_KEY = 'tecnoshop_session'
+const CART_KEY = 'tecnoshop_cart'
+const WISHLIST_KEY = 'tecnoshop_wishlist'
 
 function loadSession(): User {
   try {
@@ -574,7 +574,7 @@ function Navbar({
       <div style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 800, fontSize: isMobile ? 18 : 22, letterSpacing: -0.5, display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, cursor: 'pointer' }}
         onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
         <span style={{ background: 'linear-gradient(135deg,#00c8ff,#7c3aed)', borderRadius: 6, padding: '2px 6px', fontSize: isMobile ? 15 : 18 }}>⚡</span>
-        {!isMobile && <span style={{ color: '#e8eaf0' }}>Tecno<span style={{ color: '#00c8ff' }}>Store</span></span>}
+        {!isMobile && <span style={{ color: '#e8eaf0' }}>Tecno<span style={{ color: '#00c8ff' }}>Shop</span></span>}
       </div>
 
       {/* Categories dropdown */}
@@ -1791,7 +1791,7 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (u: Us
         {mode === 'login' && (
           <>
             <div style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 800, fontSize: 24, color: '#e8eaf0', marginBottom: 6 }}>Iniciar sesión</div>
-            <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 28 }}>Accedé a tu cuenta de TecnoStore</div>
+            <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 28 }}>Accedé a tu cuenta de TecnoShop</div>
             <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
                 <label style={labelStyle}>Email</label>
@@ -1827,7 +1827,7 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (u: Us
         {mode === 'register' && (
           <>
             <div style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 800, fontSize: 24, color: '#e8eaf0', marginBottom: 6 }}>Crear cuenta</div>
-            <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 28 }}>Registrate para comprar en TecnoStore</div>
+            <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 28 }}>Registrate para comprar en TecnoShop</div>
             <form onSubmit={handleRegister} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
                 <label style={labelStyle}>Nombre</label>
@@ -2164,9 +2164,9 @@ export default function App() {
           {/* Footer */}
           <div style={{ borderTop: '1px solid #1e2535', padding: isMobile ? '24px 16px' : '32px 40px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
             <div style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 800, fontSize: 18, color: '#e8eaf0' }}>
-              ⚡ Tecno<span style={{ color: '#00c8ff' }}>Store</span>
+              ⚡ Tecno<span style={{ color: '#00c8ff' }}>Shop</span>
             </div>
-            <div style={{ fontSize: 12, color: '#4b5563' }}>© {new Date().getFullYear()} TecnoStore. Sitio de demostración — no se realizan cobros ni envíos reales.</div>
+            <div style={{ fontSize: 12, color: '#4b5563' }}>© {new Date().getFullYear()} TecnoShop. Sitio de demostración — no se realizan cobros ni envíos reales.</div>
             <div style={{ display: 'flex', gap: 20, fontSize: 13, color: '#6b7280' }}>
               <a href="mailto:indaburufranco@gmail.com" style={{ color: 'inherit', textDecoration: 'none' }} onMouseEnter={e => (e.currentTarget.style.color = '#00c8ff')} onMouseLeave={e => (e.currentTarget.style.color = '#6b7280')}>Contacto</a>
             </div>

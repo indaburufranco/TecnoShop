@@ -1,4 +1,4 @@
-# TecnoStore
+# TecnoShop
 
 Tienda online de tecnología: categorías de productos, búsqueda, cuentas de usuario con panel de admin, carrito de compras y carrusel de promociones. Construida con React 19, Vite y Tailwind CSS v4.
 
