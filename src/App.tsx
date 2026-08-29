@@ -437,6 +437,92 @@ function addOrder(email: string, order: Order) {
   }
 }
 
+/** Todos los pedidos de todos los clientes, para el panel de administración. */
+function loadAllOrders(): { email: string; order: Order }[] {
+  try {
+    const raw = localStorage.getItem(ORDERS_KEY)
+    const all: Record<string, Order[]> = raw ? JSON.parse(raw) : {}
+    const flat: { email: string; order: Order }[] = []
+    for (const email of Object.keys(all)) {
+      for (const order of all[email]) flat.push({ email, order })
+    }
+    return flat.sort((a, b) => new Date(b.order.date).getTime() - new Date(a.order.date).getTime())
+  } catch {
+    return []
+  }
+}
+
+function updateOrderStatus(email: string, orderId: string, status: OrderStatus) {
+  try {
+    const raw = localStorage.getItem(ORDERS_KEY)
+    const all: Record<string, Order[]> = raw ? JSON.parse(raw) : {}
+    const key = email.toLowerCase()
+    if (!all[key]) return
+    all[key] = all[key].map(o => (o.id === orderId ? { ...o, status } : o))
+    localStorage.setItem(ORDERS_KEY, JSON.stringify(all))
+  } catch {
+    // sin persistencia si localStorage falla
+  }
+}
+
+// ── Products store (catálogo editable por el admin, persistido en localStorage) ──
+interface ProductStoreData {
+  extra: Product[]
+  overrides: Record<number, Partial<Product>>
+  deleted: number[]
+}
+
+const PRODUCTS_STORE_KEY = 'tecnoshop_products'
+
+function loadProductStore(): ProductStoreData {
+  return loadJSON<ProductStoreData>(PRODUCTS_STORE_KEY, { extra: [], overrides: {}, deleted: [] })
+}
+
+function saveProductStore(data: ProductStoreData) {
+  saveJSON(PRODUCTS_STORE_KEY, data)
+}
+
+function isBaseProduct(id: number) {
+  return PRODUCTS.some(p => p.id === id)
+}
+
+/** Catálogo completo: productos base (con overrides y eliminaciones del admin) + productos nuevos. */
+function getAllProducts(): Product[] {
+  const store = loadProductStore()
+  const base = PRODUCTS
+    .filter(p => !store.deleted.includes(p.id))
+    .map(p => (store.overrides[p.id] ? { ...p, ...store.overrides[p.id] } : p))
+  return [...base, ...store.extra]
+}
+
+function addProduct(data: Omit<Product, 'id'>) {
+  const store = loadProductStore()
+  const allIds = [...PRODUCTS, ...store.extra].map(p => p.id)
+  const id = Math.max(0, ...allIds) + 1
+  store.extra.push({ id, ...data })
+  saveProductStore(store)
+}
+
+function updateProduct(id: number, patch: Partial<Product>) {
+  const store = loadProductStore()
+  if (isBaseProduct(id)) {
+    store.overrides[id] = { ...store.overrides[id], ...patch }
+  } else {
+    store.extra = store.extra.map(p => (p.id === id ? { ...p, ...patch } : p))
+  }
+  saveProductStore(store)
+}
+
+function deleteProduct(id: number) {
+  const store = loadProductStore()
+  if (isBaseProduct(id)) {
+    if (!store.deleted.includes(id)) store.deleted.push(id)
+  } else {
+    store.extra = store.extra.filter(p => p.id !== id)
+  }
+  saveProductStore(store)
+}
+
 // ── Sesión, carrito y favoritos (persistidos en localStorage) ─────────────────
 const SESSION_KEY = 'tecnoshop_session'
 const CART_KEY = 'tecnoshop_cart'
@@ -506,6 +592,7 @@ function Stars({ rating }: { rating: number }) {
 
 // ── Navbar ────────────────────────────────────────────────────────────────────
 function Navbar({
+  products,
   onOpenLogin,
   user,
   onLogout,
@@ -516,7 +603,10 @@ function Navbar({
   onOpenCart,
   onOpenFavorites,
   onOpenOrders,
+  onOpenSettings,
+  onOpenAdmin,
 }: {
+  products: Product[]
   onOpenLogin: () => void
   user: User
   onLogout: () => void
@@ -527,6 +617,8 @@ function Navbar({
   onOpenCart: () => void
   onOpenFavorites: () => void
   onOpenOrders: () => void
+  onOpenSettings: () => void
+  onOpenAdmin: () => void
 }) {
   const [catOpen, setCatOpen] = useState(false)
   const [userOpen, setUserOpen] = useState(false)
@@ -538,7 +630,7 @@ function Navbar({
   const isMobile = useIsMobile()
 
   const suggestions = searchVal.trim().length > 0
-    ? PRODUCTS.filter(p => p.name.toLowerCase().includes(searchVal.toLowerCase())).slice(0, 5)
+    ? products.filter(p => p.name.toLowerCase().includes(searchVal.toLowerCase())).slice(0, 5)
     : []
 
   const selectSuggestion = (name: string) => {
@@ -783,11 +875,11 @@ function Navbar({
             {[
               { icon: '❤️', label: `Favoritos (${wishlistCount})`, onClick: () => { onOpenFavorites(); setUserOpen(false) } },
               { icon: '📦', label: 'Mis pedidos', onClick: () => { onOpenOrders(); setUserOpen(false) } },
-              { icon: '⚙️', label: 'Configuración' },
-              ...(user.isAdmin ? [{ icon: '🛠️', label: 'Administrar productos' }] : []),
+              { icon: '⚙️', label: 'Configuración', onClick: () => { onOpenSettings(); setUserOpen(false) } },
+              ...(user.isAdmin ? [{ icon: '🛠️', label: 'Administrar productos', onClick: () => { onOpenAdmin(); setUserOpen(false) } }] : []),
             ].map(item => (
               <div key={item.label} onClick={item.onClick}
-                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 4px', cursor: item.onClick ? 'pointer' : 'default', fontSize: 13, color: '#e8eaf0', borderRadius: 6 }}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 4px', cursor: 'pointer', fontSize: 13, color: '#e8eaf0', borderRadius: 6 }}
                 onMouseEnter={e => (e.currentTarget.style.background = '#161b27')}
                 onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
               >
@@ -1355,12 +1447,14 @@ function ProductDetail({
 
 // ── Cart Panel ────────────────────────────────────────────────────────────────
 function CartPanel({
+  products,
   cart,
   onClose,
   onUpdateQty,
   onRemove,
   onCheckout,
 }: {
+  products: Product[]
   cart: Cart
   onClose: () => void
   onUpdateQty: (id: number, delta: number) => void
@@ -1368,7 +1462,7 @@ function CartPanel({
   onCheckout: () => void
 }) {
   const items = Object.entries(cart)
-    .map(([id, qty]) => ({ product: PRODUCTS.find(p => p.id === Number(id))!, qty }))
+    .map(([id, qty]) => ({ product: products.find(p => p.id === Number(id))!, qty }))
     .filter(x => x.product)
 
   const total = items.reduce((sum, { product, qty }) => sum + product.price * qty, 0)
@@ -1563,19 +1657,34 @@ function OrdersPanel({ user, onClose }: { user: { name: string; email: string };
 }
 
 // ── Checkout Modal ───────────────────────────────────────────────────────────
+export interface CheckoutInfo {
+  name: string
+  email: string
+  address: string
+  city: string
+}
+
 function CheckoutModal({
   total,
+  user,
   onClose,
   onComplete,
 }: {
   total: number
+  user: User
   onClose: () => void
-  onComplete: () => void
+  onComplete: (info: CheckoutInfo) => void
 }) {
   const [step, setStep] = useState<'form' | 'processing' | 'done'>('form')
-  const [form, setForm] = useState({
-    name: '', email: '', address: '', city: '',
-    cardNumber: '', cardExpiry: '', cardCvv: '',
+  const [form, setForm] = useState(() => {
+    const stored = user ? loadUsers()[user.email] : undefined
+    return {
+      name: stored?.name ?? user?.name ?? '',
+      email: user?.email ?? '',
+      address: stored?.address ?? '',
+      city: '',
+      cardNumber: '', cardExpiry: '', cardCvv: '',
+    }
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
 
@@ -1628,7 +1737,7 @@ function CheckoutModal({
               Te enviamos un correo a {form.email} con los detalles del pedido.
             </div>
             <button
-              onClick={onComplete}
+              onClick={() => onComplete({ name: form.name, email: form.email, address: form.address, city: form.city })}
               style={{ width: '100%', background: 'linear-gradient(135deg,#00c8ff,#7c3aed)', border: 'none', borderRadius: 10, color: '#07090f', fontFamily: 'Outfit, sans-serif', fontWeight: 700, fontSize: 15, padding: '13px', cursor: 'pointer' }}
             >
               Continuar
@@ -1903,6 +2012,367 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (u: Us
   )
 }
 
+// ── Configuración de cuenta ───────────────────────────────────────────────────
+function SettingsModal({
+  user,
+  onClose,
+  onUserUpdate,
+}: {
+  user: { name: string; email: string; isAdmin: boolean }
+  onClose: () => void
+  onUserUpdate: (u: User) => void
+}) {
+  const stored = loadUsers()[user.email]
+  const [name, setName] = useState(stored?.name ?? user.name)
+  const [address, setAddress] = useState(stored?.address ?? '')
+  const [phone, setPhone] = useState(stored?.phone ?? '')
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [newPassword2, setNewPassword2] = useState('')
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState(false)
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+    setSuccess(false)
+
+    const users = loadUsers()
+    const found = users[user.email]
+    if (!found) { setError('No se encontró la cuenta'); return }
+    if (!name.trim()) { setError('Ingresá tu nombre'); return }
+
+    let passwordToSave = found.password
+    const wantsPasswordChange = currentPassword || newPassword || newPassword2
+    if (wantsPasswordChange) {
+      if (found.password !== currentPassword) { setError('La contraseña actual no coincide'); return }
+      if (newPassword.length < 4) { setError('La nueva contraseña debe tener al menos 4 caracteres'); return }
+      if (newPassword !== newPassword2) { setError('Las contraseñas nuevas no coinciden'); return }
+      passwordToSave = newPassword
+    }
+
+    users[user.email] = {
+      ...found,
+      name: name.trim(),
+      address: address.trim() || undefined,
+      phone: phone.trim() || undefined,
+      password: passwordToSave,
+    }
+    saveUsers(users)
+    onUserUpdate({ name: name.trim(), email: user.email, isAdmin: found.isAdmin })
+    setSuccess(true)
+    setCurrentPassword(''); setNewPassword(''); setNewPassword2('')
+  }
+
+  const inputStyle: React.CSSProperties = { width: '100%', background: '#161b27', border: '1px solid #1e2535', borderRadius: 8, color: '#e8eaf0', fontFamily: 'Inter, sans-serif', fontSize: 14, padding: '10px 14px', outline: 'none', boxSizing: 'border-box' }
+  const labelStyle: React.CSSProperties = { fontSize: 12, color: '#9ca3af', fontWeight: 500, display: 'block', marginBottom: 6 }
+
+  return (
+    <div
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div style={{ background: '#0e1117', border: '1px solid #1e2535', borderRadius: 16, padding: 36, width: 420, maxWidth: '90vw', maxHeight: '88vh', overflowY: 'auto', position: 'relative', boxSizing: 'border-box' }}>
+        <button onClick={onClose} style={{ position: 'absolute', top: 16, right: 16, background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: 18 }}>✕</button>
+
+        <div style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 800, fontSize: 24, color: '#e8eaf0', marginBottom: 6 }}>⚙️ Configuración</div>
+        <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 24 }}>{user.email}</div>
+
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div>
+            <label style={labelStyle}>Nombre</label>
+            <input value={name} onChange={e => { setName(e.target.value); setError('') }} style={inputStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Dirección de envío</label>
+            <input value={address} onChange={e => { setAddress(e.target.value); setError('') }} placeholder="Calle, número, ciudad" style={inputStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Teléfono</label>
+            <input value={phone} onChange={e => { setPhone(e.target.value); setError('') }} placeholder="Opcional" style={inputStyle} />
+          </div>
+
+          <div style={{ height: 1, background: '#1e2535', margin: '4px 0' }} />
+          <div style={{ fontSize: 12, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600 }}>Cambiar contraseña (opcional)</div>
+          <div>
+            <label style={labelStyle}>Contraseña actual</label>
+            <input type="password" value={currentPassword} onChange={e => { setCurrentPassword(e.target.value); setError('') }} placeholder="••••••••" style={inputStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Nueva contraseña</label>
+            <input type="password" value={newPassword} onChange={e => { setNewPassword(e.target.value); setError('') }} placeholder="••••••••" style={inputStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Repetir nueva contraseña</label>
+            <input type="password" value={newPassword2} onChange={e => { setNewPassword2(e.target.value); setError('') }} placeholder="••••••••" style={inputStyle} />
+          </div>
+
+          {error && <div style={{ fontSize: 12, color: '#ef4444', background: '#ef444411', border: '1px solid #ef444422', borderRadius: 6, padding: '8px 12px' }}>{error}</div>}
+          {success && <div style={{ fontSize: 12, color: '#10b981', background: '#10b98111', border: '1px solid #10b98122', borderRadius: 6, padding: '8px 12px' }}>Cambios guardados correctamente.</div>}
+
+          <button type="submit" style={{ background: 'linear-gradient(135deg,#00c8ff,#7c3aed)', border: 'none', borderRadius: 8, color: '#fff', fontFamily: 'Outfit, sans-serif', fontWeight: 700, fontSize: 15, padding: '12px', cursor: 'pointer', marginTop: 4 }}>
+            Guardar cambios
+          </button>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// ── Panel de administración ────────────────────────────────────────────────────
+function AdminPanel({
+  products,
+  onRefreshProducts,
+  onBack,
+}: {
+  products: Product[]
+  onRefreshProducts: () => void
+  onBack: () => void
+}) {
+  const isMobile = useIsMobile()
+  const [tab, setTab] = useState<'orders' | 'products'>('orders')
+  const [allOrders, setAllOrders] = useState(() => loadAllOrders())
+
+  const refreshOrders = () => setAllOrders(loadAllOrders())
+
+  const emptyForm = { name: '', price: '', originalPrice: '', category: CATEGORIES[0].label, image: '', badge: '', description: '' }
+  const [form, setForm] = useState(emptyForm)
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
+  const [formError, setFormError] = useState('')
+
+  useEffect(() => { window.scrollTo({ top: 0 }) }, [])
+
+  const startEdit = (p: Product) => {
+    setEditingId(p.id)
+    setFormError('')
+    setForm({
+      name: p.name,
+      price: String(p.price),
+      originalPrice: p.originalPrice ? String(p.originalPrice) : '',
+      category: p.category,
+      image: p.image,
+      badge: p.badge ?? '',
+      description: p.description ?? '',
+    })
+  }
+
+  const cancelEdit = () => { setEditingId(null); setForm(emptyForm); setFormError('') }
+
+  const submitProduct = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!form.name.trim()) return setFormError('Ingresá el nombre del producto')
+    const price = Number(form.price)
+    if (!form.price || Number.isNaN(price) || price <= 0) return setFormError('Ingresá un precio válido')
+    if (!form.image.trim()) return setFormError('Ingresá la URL de una imagen')
+    const originalPrice = form.originalPrice ? Number(form.originalPrice) : undefined
+    if (originalPrice !== undefined && (Number.isNaN(originalPrice) || originalPrice <= price)) {
+      return setFormError('El precio original debe ser mayor al precio actual')
+    }
+
+    const payload = {
+      name: form.name.trim(),
+      price,
+      originalPrice,
+      category: form.category,
+      image: form.image.trim(),
+      badge: form.badge.trim() || undefined,
+      description: form.description.trim() || undefined,
+    }
+
+    if (editingId != null) {
+      updateProduct(editingId, payload)
+    } else {
+      addProduct({ ...payload, rating: 5, reviews: 0 })
+    }
+    onRefreshProducts()
+    cancelEdit()
+  }
+
+  const handleDelete = (id: number) => {
+    if (confirmDeleteId !== id) { setConfirmDeleteId(id); return }
+    deleteProduct(id)
+    onRefreshProducts()
+    setConfirmDeleteId(null)
+    if (editingId === id) cancelEdit()
+  }
+
+  const inputStyle: React.CSSProperties = { width: '100%', background: '#0e1117', border: '1px solid #1e2535', borderRadius: 8, color: '#e8eaf0', fontSize: 13, padding: '9px 12px', fontFamily: 'Inter, sans-serif', boxSizing: 'border-box' }
+  const labelStyle: React.CSSProperties = { fontSize: 11, color: '#6b7280', fontWeight: 600, display: 'block', marginBottom: 5, textTransform: 'uppercase', letterSpacing: 0.4 }
+
+  return (
+    <div style={{ minHeight: '100vh', background: '#07090f', padding: isMobile ? '20px 16px 60px' : '32px 40px 80px' }}>
+      <button
+        onClick={onBack}
+        style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: 14, fontFamily: 'Inter, sans-serif', marginBottom: 24, padding: 0 }}
+        onMouseEnter={e => (e.currentTarget.style.color = '#00c8ff')}
+        onMouseLeave={e => (e.currentTarget.style.color = '#6b7280')}
+      >
+        ← Volver a la tienda
+      </button>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+        <span style={{ fontSize: 22 }}>🛠️</span>
+        <h1 style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 800, fontSize: isMobile ? 22 : 28, color: '#e8eaf0', margin: 0 }}>Panel de administración</h1>
+      </div>
+      <p style={{ fontSize: 13, color: '#6b7280', marginBottom: 28 }}>Gestioná pedidos y el catálogo de productos de TecnoShop.</p>
+
+      {/* Tabs */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 24, borderBottom: '1px solid #1e2535' }}>
+        {[
+          { key: 'orders' as const, label: `📦 Pedidos (${allOrders.length})` },
+          { key: 'products' as const, label: `📋 Productos (${products.length})` },
+        ].map(t => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            style={{
+              padding: '10px 18px', background: 'none', border: 'none',
+              borderBottom: `2px solid ${tab === t.key ? '#00c8ff' : 'transparent'}`,
+              color: tab === t.key ? '#e8eaf0' : '#6b7280',
+              fontFamily: 'Outfit, sans-serif', fontWeight: 600, fontSize: 14,
+              cursor: 'pointer', marginBottom: -1,
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'orders' ? (
+        allOrders.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '60px 0', color: '#6b7280' }}>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>📦</div>
+            <div style={{ fontFamily: 'Outfit, sans-serif', fontSize: 18, fontWeight: 600, color: '#4b5563' }}>Todavía no hay pedidos</div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {allOrders.map(({ email, order }) => (
+              <div key={order.id} style={{ background: '#0e1117', border: '1px solid #1e2535', borderRadius: 12, padding: 18 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
+                  <div>
+                    <div style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 700, fontSize: 14, color: '#e8eaf0' }}>{order.id}</div>
+                    <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+                      {email} · {new Date(order.date).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </div>
+                  </div>
+                  <select
+                    value={order.status}
+                    onChange={e => { updateOrderStatus(email, order.id, e.target.value as OrderStatus); refreshOrders() }}
+                    style={{
+                      fontSize: 12, fontWeight: 600, padding: '6px 10px', borderRadius: 999,
+                      color: STATUS_COLOR[order.status], background: STATUS_COLOR[order.status] + '1a',
+                      border: `1px solid ${STATUS_COLOR[order.status]}44`, cursor: 'pointer',
+                    }}
+                  >
+                    {(['Confirmado', 'En preparación', 'Enviado', 'Entregado'] as OrderStatus[]).map(s => (
+                      <option key={s} value={s} style={{ background: '#0e1117', color: '#e8eaf0' }}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
+                  {order.items.map((it, i) => (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#9ca3af' }}>
+                      <span>{it.qty}× {it.name}</span>
+                      <span>${(it.price * it.qty).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 10, borderTop: '1px solid #1e2535' }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#e8eaf0' }}>Total</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: '#00c8ff' }}>${order.total.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '360px 1fr', gap: 28, alignItems: 'flex-start' }}>
+          {/* Formulario de alta/edición */}
+          <form onSubmit={submitProduct} style={{ background: '#0e1117', border: '1px solid #1e2535', borderRadius: 14, padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 700, fontSize: 16, color: '#e8eaf0' }}>
+              {editingId != null ? 'Editar producto' : '+ Nuevo producto'}
+            </div>
+            <div>
+              <label style={labelStyle}>Nombre</label>
+              <input style={inputStyle} value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Nombre del producto" />
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <div style={{ flex: 1 }}>
+                <label style={labelStyle}>Precio</label>
+                <input style={inputStyle} type="number" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} placeholder="0.00" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={labelStyle}>Precio anterior</label>
+                <input style={inputStyle} type="number" value={form.originalPrice} onChange={e => setForm(f => ({ ...f, originalPrice: e.target.value }))} placeholder="Opcional" />
+              </div>
+            </div>
+            <div>
+              <label style={labelStyle}>Categoría</label>
+              <select style={{ ...inputStyle, cursor: 'pointer' }} value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}>
+                {CATEGORIES.map(c => <option key={c.label} value={c.label} style={{ background: '#0e1117' }}>{c.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Insignia</label>
+              <select style={{ ...inputStyle, cursor: 'pointer' }} value={form.badge} onChange={e => setForm(f => ({ ...f, badge: e.target.value }))}>
+                <option value="" style={{ background: '#0e1117' }}>Sin insignia</option>
+                {['Nuevo', 'Oferta', 'Bestseller', 'Popular'].map(b => <option key={b} value={b} style={{ background: '#0e1117' }}>{b}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>URL de imagen</label>
+              <input style={inputStyle} value={form.image} onChange={e => setForm(f => ({ ...f, image: e.target.value }))} placeholder="https://..." />
+            </div>
+            <div>
+              <label style={labelStyle}>Descripción</label>
+              <textarea style={{ ...inputStyle, minHeight: 70, resize: 'vertical', fontFamily: 'Inter, sans-serif' }} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Descripción del producto" />
+            </div>
+            {formError && <div style={{ fontSize: 12, color: '#ef4444', background: '#ef444411', border: '1px solid #ef444422', borderRadius: 6, padding: '8px 12px' }}>{formError}</div>}
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button type="submit" style={{ flex: 1, background: 'linear-gradient(135deg,#00c8ff,#7c3aed)', border: 'none', borderRadius: 8, color: '#07090f', fontFamily: 'Outfit, sans-serif', fontWeight: 700, fontSize: 14, padding: '11px', cursor: 'pointer' }}>
+                {editingId != null ? 'Guardar cambios' : 'Agregar producto'}
+              </button>
+              {editingId != null && (
+                <button type="button" onClick={cancelEdit} style={{ background: '#161b27', border: '1px solid #1e2535', borderRadius: 8, color: '#9ca3af', fontFamily: 'Outfit, sans-serif', fontWeight: 600, fontSize: 14, padding: '11px 16px', cursor: 'pointer' }}>
+                  Cancelar
+                </button>
+              )}
+            </div>
+          </form>
+
+          {/* Listado de productos */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {products.map(p => (
+              <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 14, background: '#0e1117', border: '1px solid #1e2535', borderRadius: 12, padding: 12, flexWrap: 'wrap' }}>
+                <img src={p.image} alt={p.name} style={{ width: 52, height: 52, borderRadius: 8, objectFit: 'cover', background: '#161b27', flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 140 }}>
+                  <div style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 600, fontSize: 13, color: '#e8eaf0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
+                  <div style={{ fontSize: 11, color: '#6b7280' }}>{p.category} · ${p.price.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</div>
+                </div>
+                <button onClick={() => startEdit(p)} style={{ background: '#161b27', border: '1px solid #1e2535', borderRadius: 6, color: '#9ca3af', fontSize: 12, padding: '7px 12px', cursor: 'pointer', flexShrink: 0 }}>
+                  ✏️ Editar
+                </button>
+                <button
+                  onClick={() => handleDelete(p.id)}
+                  style={{
+                    background: confirmDeleteId === p.id ? '#ef4444' : '#161b27',
+                    border: `1px solid ${confirmDeleteId === p.id ? '#ef4444' : '#1e2535'}`,
+                    borderRadius: 6, color: confirmDeleteId === p.id ? '#fff' : '#ef4444',
+                    fontSize: 12, padding: '7px 12px', cursor: 'pointer', flexShrink: 0, fontWeight: confirmDeleteId === p.id ? 700 : 400,
+                  }}
+                >
+                  {confirmDeleteId === p.id ? '¿Confirmar?' : '🗑 Eliminar'}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
   const [user, setUser] = useState<User>(() => loadSession())
@@ -1910,6 +2380,7 @@ export default function App() {
   const [cartOpen, setCartOpen] = useState(false)
   const [cart, setCart] = useState<Cart>(() => loadJSON(CART_KEY, {}))
   const [wishlist, setWishlist] = useState<number[]>(() => loadJSON(WISHLIST_KEY, []))
+  const [products, setProducts] = useState<Product[]>(() => getAllProducts())
 
   useEffect(() => saveSession(user), [user])
   useEffect(() => saveJSON(CART_KEY, cart), [cart])
@@ -1919,12 +2390,23 @@ export default function App() {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [showFavorites, setShowFavorites] = useState(false)
   const [ordersOpen, setOrdersOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [adminOpen, setAdminOpen] = useState(false)
   const [minPrice, setMinPrice] = useState('')
   const [maxPrice, setMaxPrice] = useState('')
   const [checkoutOpen, setCheckoutOpen] = useState(false)
   const [sortBy, setSortBy] = useState<'default' | 'price-asc' | 'price-desc' | 'rating'>('default')
   const isMobile = useIsMobile()
   const productsRef = useRef<HTMLDivElement>(null)
+
+  const refreshProducts = () => setProducts(getAllProducts())
+
+  const handleLogout = () => {
+    setUser(null)
+    setAdminOpen(false)
+    setSettingsOpen(false)
+    setOrdersOpen(false)
+  }
 
   const cartCount = Object.values(cart).reduce((s, q) => s + q, 0)
 
@@ -1954,7 +2436,7 @@ export default function App() {
     productsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
-  const filteredProducts = PRODUCTS.filter(p => {
+  const filteredProducts = products.filter(p => {
     const matchCat = !activeCategory || p.category === activeCategory
     const matchSearch = !searchQuery || p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.category.toLowerCase().includes(searchQuery.toLowerCase())
     const matchFavorites = !showFavorites || wishlist.includes(p.id)
@@ -1998,9 +2480,10 @@ export default function App() {
   return (
     <div style={{ minHeight: '100vh', background: '#07090f', fontFamily: 'Inter, sans-serif' }}>
       <Navbar
+        products={products}
         onOpenLogin={() => setLoginOpen(true)}
         user={user}
-        onLogout={() => setUser(null)}
+        onLogout={handleLogout}
         cartCount={cartCount}
         wishlistCount={wishlist.length}
         onSearch={handleSearch}
@@ -2008,6 +2491,8 @@ export default function App() {
         onOpenCart={() => setCartOpen(true)}
         onOpenFavorites={handleOpenFavorites}
         onOpenOrders={() => setOrdersOpen(true)}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenAdmin={() => setAdminOpen(true)}
       />
 
       {selectedProduct ? (
@@ -2020,6 +2505,8 @@ export default function App() {
           onGoHome={() => { setSelectedProduct(null); setActiveCategory(null); setShowFavorites(false); setTimeout(() => window.scrollTo({ top: 0 }), 50) }}
           onCategoryClick={(cat) => { setSelectedProduct(null); setActiveCategory(cat); setShowFavorites(false); setTimeout(scrollToProducts, 80) }}
         />
+      ) : adminOpen && user?.isAdmin ? (
+        <AdminPanel products={products} onRefreshProducts={refreshProducts} onBack={() => setAdminOpen(false)} />
       ) : (
         <>
           <Carousel onCategoryFilter={(cat) => { setActiveCategory(cat); setTimeout(scrollToProducts, 80) }} />
@@ -2182,8 +2669,17 @@ export default function App() {
         <OrdersPanel user={user} onClose={() => setOrdersOpen(false)} />
       )}
 
+      {settingsOpen && user && (
+        <SettingsModal
+          user={user}
+          onClose={() => setSettingsOpen(false)}
+          onUserUpdate={setUser}
+        />
+      )}
+
       {cartOpen && (
         <CartPanel
+          products={products}
           cart={cart}
           onClose={() => setCartOpen(false)}
           onUpdateQty={handleUpdateQty}
@@ -2195,27 +2691,26 @@ export default function App() {
       {checkoutOpen && (
         <CheckoutModal
           total={Object.entries(cart).reduce((sum, [id, qty]) => {
-            const p = PRODUCTS.find(x => x.id === Number(id))
+            const p = products.find(x => x.id === Number(id))
             return sum + (p ? p.price * qty : 0)
           }, 0)}
+          user={user}
           onClose={() => setCheckoutOpen(false)}
-          onComplete={() => {
-            if (user) {
-              const items = Object.entries(cart)
-                .map(([id, qty]) => {
-                  const p = PRODUCTS.find(x => x.id === Number(id))
-                  return p ? { name: p.name, qty, price: p.price } : null
-                })
-                .filter((x): x is { name: string; qty: number; price: number } => x !== null)
-              const total = items.reduce((sum, it) => sum + it.price * it.qty, 0)
-              addOrder(user.email, {
-                id: `ORD-${Date.now().toString(36).toUpperCase()}`,
-                date: new Date().toISOString(),
-                status: 'Confirmado',
-                items,
-                total,
+          onComplete={(info) => {
+            const items = Object.entries(cart)
+              .map(([id, qty]) => {
+                const p = products.find(x => x.id === Number(id))
+                return p ? { name: p.name, qty, price: p.price } : null
               })
-            }
+              .filter((x): x is { name: string; qty: number; price: number } => x !== null)
+            const total = items.reduce((sum, it) => sum + it.price * it.qty, 0)
+            addOrder(info.email, {
+              id: `ORD-${Date.now().toString(36).toUpperCase()}`,
+              date: new Date().toISOString(),
+              status: 'Confirmado',
+              items,
+              total,
+            })
             setCart({})
             setCheckoutOpen(false)
             setCartOpen(false)
