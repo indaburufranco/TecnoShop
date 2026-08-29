@@ -379,14 +379,27 @@ export interface StoredUser {
 
 const USERS_KEY = 'tecnoshop_users'
 
+const ADMIN_EMAIL = 'admin@tecnoshop.com'
+const ADMIN_SEED: StoredUser = { password: 'admin123', name: 'Administrador', isAdmin: true }
+
 function loadUsers(): Record<string, StoredUser> {
   try {
     const raw = localStorage.getItem(USERS_KEY)
-    if (raw) return JSON.parse(raw)
+    if (raw) {
+      const users = JSON.parse(raw)
+      // Migración: navegadores que ya tenían datos de antes de que existiera
+      // el login de admin simplificado reciben la cuenta sin perder el resto.
+      if (!users[ADMIN_EMAIL]) {
+        users[ADMIN_EMAIL] = ADMIN_SEED
+        saveUsers(users)
+      }
+      return users
+    }
   } catch {
     // localStorage no disponible o datos corruptos — se recrea desde cero
   }
   const seed: Record<string, StoredUser> = {
+    [ADMIN_EMAIL]: ADMIN_SEED,
     '4dmi1n@tecnoshop.com': { password: '4dm1n03', name: 'Administrador', isAdmin: true },
     'juan@mail.com': { password: '1234', name: 'Juan García', isAdmin: false },
   }
