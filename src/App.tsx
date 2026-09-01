@@ -1,24 +1,29 @@
 import { useState, useEffect, useRef } from 'react'
+import { supabase } from './lib/supabase'
+import {
+  fetchProducts,
+  insertProduct,
+  updateProductRow,
+  deleteProductRow,
+  uploadProductImage,
+  createOrderRow,
+  fetchMyOrders,
+  fetchAllOrders,
+  updateOrderStatusRow,
+  fetchProfile,
+  updateProfile,
+  type Product,
+  type OrderStatus,
+  type Order,
+  type OrderItem,
+  type OrderWithEmail,
+  type ProductInput,
+} from './lib/api'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-type User = { name: string; email: string; isAdmin: boolean } | null
+type User = { id: string; name: string; email: string; isAdmin: boolean } | null
 type Cart = Record<number, number> // productId → quantity
-
-interface Product {
-  id: number
-  name: string
-  price: number
-  originalPrice?: number
-  category: string
-  image: string
-  badge?: string
-  rating: number
-  reviews: number
-  images?: string[]
-  description?: string
-  specs?: { label: string; value: string }[]
-}
 
 // ── Data ─────────────────────────────────────────────────────────────────────
 
@@ -72,495 +77,11 @@ const CAROUSEL_SLIDES = [
   },
 ]
 
-const PRODUCTS: Product[] = [
-  {
-    id: 1,
-    name: 'MacBook Pro 14" M3',
-    price: 1899.99,
-    originalPrice: 2199.99,
-    category: 'Laptops & PCs',
-    image: 'https://images.unsplash.com/photo-1625490939776-17cef70ec079?w=400&h=300&fit=crop&auto=format',
-    badge: 'Oferta',
-    rating: 4.9,
-    reviews: 342,
-    images: [
-      'https://images.unsplash.com/photo-1625490939776-17cef70ec079?w=800&h=600&fit=crop&auto=format',
-      'https://images.unsplash.com/photo-1530893609608-32a9af3aa95c?w=800&h=600&fit=crop&auto=format',
-      'https://images.unsplash.com/photo-1542351967-d5ae722fed71?w=800&h=600&fit=crop&auto=format',
-      'https://images.unsplash.com/photo-1737868131581-6379cdee4ec3?w=800&h=600&fit=crop&auto=format',
-    ],
-    description: 'El MacBook Pro de 14 pulgadas con chip M3 lleva el rendimiento a otro nivel. Pantalla Liquid Retina XDR, batería de hasta 18 horas y conectividad completa con Thunderbolt 4. Ideal para profesionales creativos, desarrolladores y diseñadores que necesitan lo mejor.',
-    specs: [
-      { label: 'Procesador', value: 'Apple M3 (8 núcleos CPU, 10 GPU)' },
-      { label: 'Memoria RAM', value: '16 GB unificada' },
-      { label: 'Almacenamiento', value: '512 GB SSD NVMe' },
-      { label: 'Pantalla', value: '14.2" Liquid Retina XDR, 3024×1964, 120Hz' },
-      { label: 'Batería', value: 'Hasta 18 horas' },
-      { label: 'Sistema', value: 'macOS Sonoma' },
-      { label: 'Peso', value: '1.55 kg' },
-    ],
-  },
-  {
-    id: 2,
-    name: 'Samsung Galaxy S24 Ultra',
-    price: 1149.00,
-    category: 'Smartphones',
-    image: 'https://images.unsplash.com/photo-1588091209794-8aa1768e2937?w=400&h=300&fit=crop&auto=format',
-    badge: 'Nuevo',
-    rating: 4.8,
-    reviews: 218,
-    images: [
-      'https://images.unsplash.com/photo-1588091209794-8aa1768e2937?w=800&h=600&fit=crop&auto=format',
-      'https://images.unsplash.com/photo-1654555023156-0a1c9cdf1130?w=800&h=600&fit=crop&auto=format',
-      'https://images.unsplash.com/photo-1698338854513-14758e9b9b2c?w=800&h=600&fit=crop&auto=format',
-    ],
-    description: 'El smartphone más poderoso de Samsung. Con cámara de 200MP, S Pen integrado, procesador Snapdragon 8 Gen 3 y pantalla Dynamic AMOLED de 6.8". La experiencia definitiva en Android para quienes no aceptan compromisos.',
-    specs: [
-      { label: 'Procesador', value: 'Snapdragon 8 Gen 3' },
-      { label: 'RAM', value: '12 GB' },
-      { label: 'Almacenamiento', value: '256 GB' },
-      { label: 'Pantalla', value: '6.8" Dynamic AMOLED, 3088×1440, 120Hz' },
-      { label: 'Cámara principal', value: '200 MP, f/1.7, OIS' },
-      { label: 'Batería', value: '5000 mAh, carga 45W' },
-      { label: 'Sistema', value: 'Android 14 / One UI 6.1' },
-    ],
-  },
-  {
-    id: 3,
-    name: 'Sony WH-1000XM5',
-    price: 279.99,
-    originalPrice: 349.99,
-    category: 'Audio',
-    image: 'https://images.unsplash.com/photo-1655156875398-d11323b4f5de?w=400&h=300&fit=crop&auto=format',
-    badge: 'Bestseller',
-    rating: 4.7,
-    reviews: 891,
-    images: [
-      'https://images.unsplash.com/photo-1655156875398-d11323b4f5de?w=800&h=600&fit=crop&auto=format',
-      'https://images.unsplash.com/photo-1698338854513-14758e9b9b2c?w=800&h=600&fit=crop&auto=format',
-      'https://images.unsplash.com/photo-1542351967-d5ae722fed71?w=800&h=600&fit=crop&auto=format',
-    ],
-    description: 'Cancelación de ruido líder de la industria. Los WH-1000XM5 de Sony combinan ocho micrófonos, dos procesadores y el motor QN2e para eliminar el ruido exterior de forma excepcional. Sonido Hi-Res Audio con LDAC y autonomía de 30 horas.',
-    specs: [
-      { label: 'Cancelación de ruido', value: 'Adaptativa con 8 micrófonos' },
-      { label: 'Autonomía', value: '30 horas (ANC activado)' },
-      { label: 'Carga rápida', value: '3 min = 3 horas de uso' },
-      { label: 'Conectividad', value: 'Bluetooth 5.2, NFC, Jack 3.5mm' },
-      { label: 'Códecs', value: 'LDAC, AAC, SBC' },
-      { label: 'Peso', value: '250 g' },
-    ],
-  },
-  {
-    id: 4,
-    name: 'ASUS ROG Zephyrus G16',
-    price: 2249.00,
-    category: 'Gaming',
-    image: 'https://images.unsplash.com/photo-1530893609608-32a9af3aa95c?w=400&h=300&fit=crop&auto=format',
-    rating: 4.6,
-    reviews: 127,
-    images: [
-      'https://images.unsplash.com/photo-1530893609608-32a9af3aa95c?w=800&h=600&fit=crop&auto=format',
-      'https://images.unsplash.com/photo-1625490939776-17cef70ec079?w=800&h=600&fit=crop&auto=format',
-      'https://images.unsplash.com/photo-1654555023156-0a1c9cdf1130?w=800&h=600&fit=crop&auto=format',
-    ],
-    description: 'La laptop gaming definitiva para competir sin concesiones. El ASUS ROG Zephyrus G16 integra RTX 4080, panel ROG Nebula Display QHD 240Hz y refrigeración líquida avanzada en un chasis de apenas 1.85 kg. Domina cualquier juego.',
-    specs: [
-      { label: 'Procesador', value: 'Intel Core i9-14900HX' },
-      { label: 'GPU', value: 'NVIDIA RTX 4080 12GB GDDR6' },
-      { label: 'RAM', value: '32 GB DDR5 4800MHz' },
-      { label: 'Almacenamiento', value: '1 TB SSD PCIe 4.0' },
-      { label: 'Pantalla', value: '16" QHD+ 240Hz, ROG Nebula Display' },
-      { label: 'Sistema', value: 'Windows 11 Pro' },
-      { label: 'Peso', value: '1.85 kg' },
-    ],
-  },
-  {
-    id: 5,
-    name: 'Dell XPS 15 OLED',
-    price: 1749.99,
-    originalPrice: 1999.00,
-    category: 'Laptops & PCs',
-    image: 'https://images.unsplash.com/photo-1737868131581-6379cdee4ec3?w=400&h=300&fit=crop&auto=format',
-    badge: 'Oferta',
-    rating: 4.5,
-    reviews: 203,
-    images: [
-      'https://images.unsplash.com/photo-1737868131581-6379cdee4ec3?w=800&h=600&fit=crop&auto=format',
-      'https://images.unsplash.com/photo-1542351967-d5ae722fed71?w=800&h=600&fit=crop&auto=format',
-      'https://images.unsplash.com/photo-1530893609608-32a9af3aa95c?w=800&h=600&fit=crop&auto=format',
-    ],
-    description: 'La elegancia hecha laptop. El Dell XPS 15 OLED ofrece una pantalla impresionante de 15.6" con colores perfectos y contraste infinito, junto con el rendimiento de Core i7 de 13ª gen. Diseñado para creadores que valoran tanto la estética como el poder.',
-    specs: [
-      { label: 'Procesador', value: 'Intel Core i7-13700H' },
-      { label: 'GPU', value: 'NVIDIA RTX 4060 8GB' },
-      { label: 'RAM', value: '16 GB DDR5' },
-      { label: 'Almacenamiento', value: '512 GB SSD NVMe' },
-      { label: 'Pantalla', value: '15.6" OLED 3.5K, 60Hz, 100% DCI-P3' },
-      { label: 'Batería', value: 'Hasta 13 horas' },
-      { label: 'Peso', value: '1.86 kg' },
-    ],
-  },
-  {
-    id: 6,
-    name: 'iPad Pro 13" M4',
-    price: 1099.00,
-    category: 'Smartphones',
-    image: 'https://images.unsplash.com/photo-1698338854513-14758e9b9b2c?w=400&h=300&fit=crop&auto=format',
-    badge: 'Nuevo',
-    rating: 4.9,
-    reviews: 456,
-    images: [
-      'https://images.unsplash.com/photo-1698338854513-14758e9b9b2c?w=800&h=600&fit=crop&auto=format',
-      'https://images.unsplash.com/photo-1588091209794-8aa1768e2937?w=800&h=600&fit=crop&auto=format',
-      'https://images.unsplash.com/photo-1654555023156-0a1c9cdf1130?w=800&h=600&fit=crop&auto=format',
-    ],
-    description: 'El iPad Pro M4 redefine lo que puede hacer una tablet. Con la pantalla Ultra Retina XDR más delgada del mundo, chip M4 de nivel computadora y compatibilidad con Apple Pencil Pro, es la herramienta definitiva para creativos y profesionales.',
-    specs: [
-      { label: 'Procesador', value: 'Apple M4 (10 núcleos CPU)' },
-      { label: 'Pantalla', value: '13" Ultra Retina XDR OLED, 2752×2064' },
-      { label: 'Almacenamiento', value: '256 GB' },
-      { label: 'Cámara', value: '12 MP gran angular + TrueDepth frontal 12 MP' },
-      { label: 'Conectividad', value: 'Wi-Fi 6E, Bluetooth 5.3, USB-C' },
-      { label: 'Batería', value: 'Hasta 10 horas' },
-    ],
-  },
-  {
-    id: 7,
-    name: 'LG OLED C4 55"',
-    price: 1299.00,
-    originalPrice: 1599.00,
-    category: 'Televisores',
-    image: 'https://images.unsplash.com/photo-1783700776216-cf661c778151?w=400&h=300&fit=crop&auto=format',
-    badge: 'Oferta',
-    rating: 4.8,
-    reviews: 312,
-    images: [
-      'https://images.unsplash.com/photo-1783700776216-cf661c778151?w=800&h=600&fit=crop&auto=format',
-      'https://images.unsplash.com/photo-1698338854513-14758e9b9b2c?w=800&h=600&fit=crop&auto=format',
-    ],
-    description: 'Negro perfecto, colores infinitos. El LG OLED C4 incorpora el procesador α9 Gen7 con IA, compatible con Dolby Vision, HDR10 y Dolby Atmos. Ideal para cinéfilos y gamers que quieren la mejor experiencia visual en casa.',
-    specs: [
-      { label: 'Panel', value: 'OLED evo 4K, 120Hz' },
-      { label: 'Procesador', value: 'α9 Gen7 AI' },
-      { label: 'HDR', value: 'Dolby Vision, HDR10, HLG' },
-      { label: 'Gaming', value: 'HDMI 2.1, G-Sync, FreeSync, 0.1ms' },
-      { label: 'Smart TV', value: 'webOS 24' },
-      { label: 'Audio', value: '60W, Dolby Atmos, AI Sound Pro' },
-    ],
-  },
-  {
-    id: 8,
-    name: 'Sony A7 IV Mirrorless',
-    price: 2499.00,
-    category: 'Cámaras',
-    image: 'https://images.unsplash.com/photo-1530893609608-32a9af3aa95c?w=400&h=300&fit=crop&auto=format',
-    rating: 4.7,
-    reviews: 89,
-    images: [
-      'https://images.unsplash.com/photo-1530893609608-32a9af3aa95c?w=800&h=600&fit=crop&auto=format',
-      'https://images.unsplash.com/photo-1625490939776-17cef70ec079?w=800&h=600&fit=crop&auto=format',
-      'https://images.unsplash.com/photo-1542351967-d5ae722fed71?w=800&h=600&fit=crop&auto=format',
-    ],
-    description: 'La cámara híbrida de referencia para fotógrafos y videomakers profesionales. Sensor BSI CMOS de 33MP, ráfaga de 10fps, video 4K 60fps y sistema de enfoque con IA. El equilibrio perfecto entre rendimiento y versatilidad.',
-    specs: [
-      { label: 'Sensor', value: 'BSI CMOS Full-Frame 33 MP' },
-      { label: 'ISO', value: '100-51.200 (ampliable a 204.800)' },
-      { label: 'Video', value: '4K 60fps, 10 bits, S-Log3' },
-      { label: 'Ráfaga', value: '10 fps mecánica, 15 fps electrónica' },
-      { label: 'Enfoque', value: 'Fase/Contraste 759 puntos, AI' },
-      { label: 'Batería', value: 'NP-FZ100, aprox. 520 disparos' },
-    ],
-  },
-  {
-    id: 9,
-    name: 'Logitech MX Master 3S',
-    price: 99.99,
-    originalPrice: 119.99,
-    category: 'Accesorios',
-    image: 'https://images.unsplash.com/photo-1542351967-d5ae722fed71?w=400&h=300&fit=crop&auto=format',
-    badge: 'Popular',
-    rating: 4.8,
-    reviews: 1204,
-    images: [
-      'https://images.unsplash.com/photo-1542351967-d5ae722fed71?w=800&h=600&fit=crop&auto=format',
-      'https://images.unsplash.com/photo-1655156875398-d11323b4f5de?w=800&h=600&fit=crop&auto=format',
-    ],
-    description: 'El mouse más avanzado para trabajar con precisión. Sensor MagSpeed electromagnético ultrasilencioso, rueda de desplazamiento adaptativa, hasta 3 dispositivos simultáneos y batería de hasta 70 días. Diseñado para el trabajo intensivo.',
-    specs: [
-      { label: 'Sensor', value: 'MagSpeed óptico 8000 DPI' },
-      { label: 'Botones', value: '7 botones programables' },
-      { label: 'Conexión', value: 'Bluetooth, Logi Bolt USB' },
-      { label: 'Dispositivos', value: 'Hasta 3 simultáneos (Easy-Switch)' },
-      { label: 'Batería', value: 'Hasta 70 días, carga USB-C' },
-      { label: 'Compatibilidad', value: 'Windows, macOS, Linux, iPadOS' },
-    ],
-  },
-  {
-    id: 10,
-    name: 'Apple HomePod mini',
-    price: 99.00,
-    category: 'Smart Home',
-    image: 'https://images.unsplash.com/photo-1625490939776-17cef70ec079?w=400&h=300&fit=crop&auto=format',
-    rating: 4.4,
-    reviews: 567,
-    images: [
-      'https://images.unsplash.com/photo-1625490939776-17cef70ec079?w=800&h=600&fit=crop&auto=format',
-      'https://images.unsplash.com/photo-1654555023156-0a1c9cdf1130?w=800&h=600&fit=crop&auto=format',
-    ],
-    description: 'Gran sonido en tamaño compacto. El HomePod mini llena cualquier habitación con audio de 360° de alta calidad. Con Siri integrado, domótica HomeKit y la capacidad de crear un sistema estéreo con dos unidades. Simplemente enchufa y disfruta.',
-    specs: [
-      { label: 'Chip', value: 'Apple S5' },
-      { label: 'Audio', value: '360° con guía acústica, full range + pasivos' },
-      { label: 'Conectividad', value: 'Wi-Fi 802.11n, Bluetooth 5.0, Thread' },
-      { label: 'Asistente', value: 'Siri' },
-      { label: 'Alimentación', value: 'Cable USB-C (incluido)' },
-      { label: 'Dimensiones', value: '84.3 mm alto × 97.9 mm diámetro' },
-    ],
-  },
-  {
-    id: 11,
-    name: 'Razer BlackWidow V4',
-    price: 159.99,
-    originalPrice: 189.99,
-    category: 'Gaming',
-    image: 'https://images.unsplash.com/photo-1654555023156-0a1c9cdf1130?w=400&h=300&fit=crop&auto=format',
-    badge: 'Oferta',
-    rating: 4.6,
-    reviews: 445,
-    images: [
-      'https://images.unsplash.com/photo-1654555023156-0a1c9cdf1130?w=800&h=600&fit=crop&auto=format',
-      'https://images.unsplash.com/photo-1542351967-d5ae722fed71?w=800&h=600&fit=crop&auto=format',
-      'https://images.unsplash.com/photo-1530893609608-32a9af3aa95c?w=800&h=600&fit=crop&auto=format',
-    ],
-    description: 'El teclado mecánico de los campeones. Switches Razer Yellow de actuación lineal ultrarrápida, iluminación Chroma RGB por tecla y construido para aguantar 80 millones de pulsaciones. Control multimedia dedicado y reposamuñecas magnético incluido.',
-    specs: [
-      { label: 'Switches', value: 'Razer Yellow (lineal, 1.2mm actuación)' },
-      { label: 'Durabilidad', value: '80 millones de pulsaciones' },
-      { label: 'Iluminación', value: 'Chroma RGB por tecla' },
-      { label: 'Conexión', value: 'USB-A trenzado desmontable' },
-      { label: 'Extras', value: 'Rueda multimedia, reposamuñecas magnético' },
-      { label: 'Peso', value: '1.27 kg' },
-    ],
-  },
-  {
-    id: 12,
-    name: 'Google Pixel 8 Pro',
-    price: 899.00,
-    category: 'Smartphones',
-    image: 'https://images.unsplash.com/photo-1588091209794-8aa1768e2937?w=400&h=300&fit=crop&auto=format',
-    rating: 4.5,
-    reviews: 178,
-    images: [
-      'https://images.unsplash.com/photo-1588091209794-8aa1768e2937?w=800&h=600&fit=crop&auto=format',
-      'https://images.unsplash.com/photo-1698338854513-14758e9b9b2c?w=800&h=600&fit=crop&auto=format',
-      'https://images.unsplash.com/photo-1654555023156-0a1c9cdf1130?w=800&h=600&fit=crop&auto=format',
-    ],
-    description: 'El smartphone de Google más inteligente hasta la fecha. Chip Tensor G3 diseñado por Google para IA en dispositivo, cámara de 50MP con Zoom Telescópico 5x y 7 años garantizados de actualizaciones. La mejor experiencia Android pura.',
-    specs: [
-      { label: 'Procesador', value: 'Google Tensor G3' },
-      { label: 'RAM', value: '12 GB' },
-      { label: 'Almacenamiento', value: '128 GB' },
-      { label: 'Pantalla', value: '6.7" LTPO OLED, 2992×1344, 1-120Hz' },
-      { label: 'Cámara', value: '50MP + 48MP ultrawide + 48MP telescópico 5x' },
-      { label: 'Batería', value: '5050 mAh, carga 30W' },
-      { label: 'Actualizaciones', value: '7 años OS + seguridad' },
-    ],
-  },
-]
-
-// ── User store (persistido en localStorage del navegador) ─────────────────────
-export interface StoredUser {
-  password: string
-  name: string
-  isAdmin: boolean
-  address?: string
-  phone?: string
-}
-
-const USERS_KEY = 'tecnoshop_users'
-
-const ADMIN_EMAIL = 'admin@tecnoshop.com'
-const ADMIN_SEED: StoredUser = { password: 'admin123', name: 'Administrador', isAdmin: true }
-
-function loadUsers(): Record<string, StoredUser> {
-  try {
-    const raw = localStorage.getItem(USERS_KEY)
-    if (raw) {
-      const users = JSON.parse(raw)
-      // Migración: navegadores que ya tenían datos de antes de que existiera
-      // el login de admin simplificado reciben la cuenta sin perder el resto.
-      if (!users[ADMIN_EMAIL]) {
-        users[ADMIN_EMAIL] = ADMIN_SEED
-        saveUsers(users)
-      }
-      return users
-    }
-  } catch {
-    // localStorage no disponible o datos corruptos — se recrea desde cero
-  }
-  const seed: Record<string, StoredUser> = {
-    [ADMIN_EMAIL]: ADMIN_SEED,
-    '4dmi1n@tecnoshop.com': { password: '4dm1n03', name: 'Administrador', isAdmin: true },
-    'juan@mail.com': { password: '1234', name: 'Juan García', isAdmin: false },
-  }
-  saveUsers(seed)
-  return seed
-}
-
-function saveUsers(users: Record<string, StoredUser>) {
-  try {
-    localStorage.setItem(USERS_KEY, JSON.stringify(users))
-  } catch {
-    // si falla el guardado (modo privado, cuota llena, etc.) seguimos sin persistencia
-  }
-}
-
-// ── Orders store ────────────────────────────────────────────────────────────────
-export type OrderStatus = 'Confirmado' | 'En preparación' | 'Enviado' | 'Entregado'
-
-export interface Order {
-  id: string
-  date: string
-  status: OrderStatus
-  items: { name: string; qty: number; price: number }[]
-  total: number
-}
-
-const ORDERS_KEY = 'tecnoshop_orders'
-
-function loadOrders(email: string): Order[] {
-  try {
-    const raw = localStorage.getItem(ORDERS_KEY)
-    const all: Record<string, Order[]> = raw ? JSON.parse(raw) : {}
-    return all[email.toLowerCase()] ?? []
-  } catch {
-    return []
-  }
-}
-
-function addOrder(email: string, order: Order) {
-  try {
-    const raw = localStorage.getItem(ORDERS_KEY)
-    const all: Record<string, Order[]> = raw ? JSON.parse(raw) : {}
-    const key = email.toLowerCase()
-    all[key] = [order, ...(all[key] ?? [])]
-    localStorage.setItem(ORDERS_KEY, JSON.stringify(all))
-  } catch {
-    // sin persistencia si localStorage falla
-  }
-}
-
-/** Todos los pedidos de todos los clientes, para el panel de administración. */
-function loadAllOrders(): { email: string; order: Order }[] {
-  try {
-    const raw = localStorage.getItem(ORDERS_KEY)
-    const all: Record<string, Order[]> = raw ? JSON.parse(raw) : {}
-    const flat: { email: string; order: Order }[] = []
-    for (const email of Object.keys(all)) {
-      for (const order of all[email]) flat.push({ email, order })
-    }
-    return flat.sort((a, b) => new Date(b.order.date).getTime() - new Date(a.order.date).getTime())
-  } catch {
-    return []
-  }
-}
-
-function updateOrderStatus(email: string, orderId: string, status: OrderStatus) {
-  try {
-    const raw = localStorage.getItem(ORDERS_KEY)
-    const all: Record<string, Order[]> = raw ? JSON.parse(raw) : {}
-    const key = email.toLowerCase()
-    if (!all[key]) return
-    all[key] = all[key].map(o => (o.id === orderId ? { ...o, status } : o))
-    localStorage.setItem(ORDERS_KEY, JSON.stringify(all))
-  } catch {
-    // sin persistencia si localStorage falla
-  }
-}
-
-// ── Products store (catálogo editable por el admin, persistido en localStorage) ──
-interface ProductStoreData {
-  extra: Product[]
-  overrides: Record<number, Partial<Product>>
-  deleted: number[]
-}
-
-const PRODUCTS_STORE_KEY = 'tecnoshop_products'
-
-function loadProductStore(): ProductStoreData {
-  return loadJSON<ProductStoreData>(PRODUCTS_STORE_KEY, { extra: [], overrides: {}, deleted: [] })
-}
-
-function saveProductStore(data: ProductStoreData) {
-  saveJSON(PRODUCTS_STORE_KEY, data)
-}
-
-function isBaseProduct(id: number) {
-  return PRODUCTS.some(p => p.id === id)
-}
-
-/** Catálogo completo: productos base (con overrides y eliminaciones del admin) + productos nuevos. */
-function getAllProducts(): Product[] {
-  const store = loadProductStore()
-  const base = PRODUCTS
-    .filter(p => !store.deleted.includes(p.id))
-    .map(p => (store.overrides[p.id] ? { ...p, ...store.overrides[p.id] } : p))
-  return [...base, ...store.extra]
-}
-
-function addProduct(data: Omit<Product, 'id'>) {
-  const store = loadProductStore()
-  const allIds = [...PRODUCTS, ...store.extra].map(p => p.id)
-  const id = Math.max(0, ...allIds) + 1
-  store.extra.push({ id, ...data })
-  saveProductStore(store)
-}
-
-function updateProduct(id: number, patch: Partial<Product>) {
-  const store = loadProductStore()
-  if (isBaseProduct(id)) {
-    store.overrides[id] = { ...store.overrides[id], ...patch }
-  } else {
-    store.extra = store.extra.map(p => (p.id === id ? { ...p, ...patch } : p))
-  }
-  saveProductStore(store)
-}
-
-function deleteProduct(id: number) {
-  const store = loadProductStore()
-  if (isBaseProduct(id)) {
-    if (!store.deleted.includes(id)) store.deleted.push(id)
-  } else {
-    store.extra = store.extra.filter(p => p.id !== id)
-  }
-  saveProductStore(store)
-}
-
-// ── Sesión, carrito y favoritos (persistidos en localStorage) ─────────────────
-const SESSION_KEY = 'tecnoshop_session'
+// ── Carrito y favoritos (persistidos en localStorage del navegador) ───────────
+// El catálogo, los pedidos y las cuentas viven en Supabase; el carrito y los
+// favoritos quedan en el dispositivo porque son datos de sesión de compra.
 const CART_KEY = 'tecnoshop_cart'
 const WISHLIST_KEY = 'tecnoshop_wishlist'
-
-function loadSession(): User {
-  try {
-    const email = localStorage.getItem(SESSION_KEY)
-    if (!email) return null
-    const found = loadUsers()[email.toLowerCase()]
-    if (!found) return null
-    return { name: found.name, email: email.toLowerCase(), isAdmin: found.isAdmin }
-  } catch {
-    return null
-  }
-}
-
-function saveSession(user: User) {
-  try {
-    if (user) localStorage.setItem(SESSION_KEY, user.email)
-    else localStorage.removeItem(SESSION_KEY)
-  } catch {
-    // sin persistencia si localStorage falla
-  }
-}
 
 function loadJSON<T>(key: string, fallback: T): T {
   try {
@@ -618,6 +139,7 @@ function Navbar({
   onOpenOrders,
   onOpenSettings,
   onOpenAdmin,
+  onGoHome,
 }: {
   products: Product[]
   onOpenLogin: () => void
@@ -632,6 +154,7 @@ function Navbar({
   onOpenOrders: () => void
   onOpenSettings: () => void
   onOpenAdmin: () => void
+  onGoHome: () => void
 }) {
   const [catOpen, setCatOpen] = useState(false)
   const [userOpen, setUserOpen] = useState(false)
@@ -650,6 +173,16 @@ function Navbar({
     setSearchVal(name)
     onSearch(name)
     setShowSuggestions(false)
+  }
+
+  // Ejecuta la búsqueda con el texto actual — desde el botón de la lupa o
+  // desde Enter. El filtrado en vivo (onChange) ya la dispara mientras se
+  // escribe; esto además cierra sugerencias y confirma la búsqueda de forma
+  // explícita, útil con teclado o lector de pantalla.
+  const submitSearch = () => {
+    onSearch(searchVal)
+    setShowSuggestions(false)
+    setMobileSearchOpen(false)
   }
 
   useEffect(() => {
@@ -675,18 +208,22 @@ function Navbar({
       alignItems: 'center',
       gap: isMobile ? 8 : 20,
     }}>
-      {/* Logo */}
-      <div style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 800, fontSize: isMobile ? 18 : 22, letterSpacing: -0.5, display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, cursor: 'pointer' }}
-        onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
+      {/* Logo — lleva al inicio y sale del panel de admin o del detalle de producto */}
+      <button
+        onClick={onGoHome}
+        aria-label="Ir al inicio"
+        style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 800, fontSize: isMobile ? 18 : 22, letterSpacing: -0.5, display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, cursor: 'pointer', background: 'none', border: 'none', padding: 0 }}
+      >
         <span style={{ background: 'linear-gradient(135deg,#00c8ff,#7c3aed)', borderRadius: 6, padding: '2px 6px', fontSize: isMobile ? 15 : 18 }}>⚡</span>
         {!isMobile && <span style={{ color: '#e8eaf0' }}>Tecno<span style={{ color: '#00c8ff' }}>Shop</span></span>}
-      </div>
+      </button>
 
       {/* Categories dropdown */}
       <div ref={catRef} style={{ position: 'relative', flexShrink: 0 }}>
         <button
           onClick={() => setCatOpen(p => !p)}
           title="Categorías"
+          aria-label="Categorías"
           style={{
             display: 'flex', alignItems: 'center', gap: 6,
             background: catOpen ? '#1e2535' : 'transparent',
@@ -747,6 +284,7 @@ function Navbar({
           <button
             onClick={() => setMobileSearchOpen(p => !p)}
             title="Buscar"
+            aria-label="Buscar"
             style={{
               flex: 1,
               background: 'transparent', border: '1px solid #1e2535', borderRadius: 8,
@@ -763,12 +301,19 @@ function Navbar({
               padding: '12px 16px', zIndex: 90,
             }}>
               <div style={{ position: 'relative' }}>
-                <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 14, color: '#6b7280', pointerEvents: 'none' }}>🔍</span>
+                <button
+                  type="button"
+                  onClick={submitSearch}
+                  aria-label="Buscar"
+                  style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 14, color: '#6b7280', background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >🔍</button>
                 <input
                   autoFocus
                   value={searchVal}
                   onChange={e => { setSearchVal(e.target.value); onSearch(e.target.value) }}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); submitSearch() } }}
                   placeholder="Buscar productos..."
+                  aria-label="Buscar productos"
                   style={{
                     width: '100%', background: '#161b27', border: '1px solid #1e2535', borderRadius: 10,
                     color: '#e8eaf0', fontFamily: 'Inter, sans-serif', fontSize: 15,
@@ -796,11 +341,18 @@ function Navbar({
         </>
       ) : (
         <div style={{ flex: 1, position: 'relative' }}>
-          <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 14, color: '#6b7280', pointerEvents: 'none' }}>🔍</span>
+          <button
+            type="button"
+            onClick={submitSearch}
+            aria-label="Buscar"
+            style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 14, color: '#6b7280', background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1 }}
+          >🔍</button>
           <input
             value={searchVal}
             onChange={e => { setSearchVal(e.target.value); onSearch(e.target.value) }}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); submitSearch() } }}
             placeholder="Buscar productos, marcas, categorías..."
+            aria-label="Buscar productos, marcas, categorías"
             style={{
               width: '100%',
               background: '#0e1117',
@@ -845,6 +397,7 @@ function Navbar({
         <button
           onClick={() => user ? setUserOpen(p => !p) : onOpenLogin()}
           title={user ? user.name : 'Iniciar sesión'}
+          aria-label={user ? `Cuenta de ${user.name}` : 'Iniciar sesión'}
           style={{
             position: 'relative',
             background: userOpen ? '#1e2535' : 'transparent',
@@ -908,10 +461,11 @@ function Navbar({
         )}
       </div>
 
-      {/* Favorites */}
+      {/* Favorites — sale del panel de admin o del detalle de producto */}
       <button
         onClick={onOpenFavorites}
         title="Favoritos"
+        aria-label="Favoritos"
         style={{
           position: 'relative',
           background: 'transparent',
@@ -943,6 +497,7 @@ function Navbar({
       <button
         onClick={onOpenCart}
         title="Carrito"
+        aria-label="Carrito"
         style={{
           position: 'relative',
           background: 'transparent',
@@ -1057,6 +612,7 @@ function Carousel({ onCategoryFilter }: { onCategoryFilter: (category: string) =
           <button
             key={i}
             onClick={() => setCurrent(i)}
+            aria-label={`Ir a la promoción ${i + 1}`}
             style={{
               width: i === current ? 28 : 8, height: 8,
               borderRadius: 4,
@@ -1074,6 +630,7 @@ function Carousel({ onCategoryFilter }: { onCategoryFilter: (category: string) =
         <button
           key={dir}
           onClick={() => setCurrent(p => dir === 'prev' ? (p - 1 + CAROUSEL_SLIDES.length) % CAROUSEL_SLIDES.length : (p + 1) % CAROUSEL_SLIDES.length)}
+          aria-label={dir === 'prev' ? 'Promoción anterior' : 'Siguiente promoción'}
           style={{
             position: 'absolute',
             top: '50%', transform: 'translateY(-50%)',
@@ -1185,9 +742,10 @@ function ProductCard({
             -{discount}%
           </div>
         )}
-        {/* Wishlist */}
+        {/* Wishlist — stopPropagation para no abrir el detalle al tocarlo */}
         <button
-          onClick={onToggleWishlist}
+          onClick={e => { e.stopPropagation(); onToggleWishlist() }}
+          aria-label={inWishlist ? `Quitar ${product.name} de favoritos` : `Agregar ${product.name} a favoritos`}
           style={{
             position: 'absolute', bottom: 12, right: 12,
             background: inWishlist ? '#7c3aed22' : 'rgba(14,17,23,0.8)',
@@ -1334,13 +892,14 @@ function ProductDetail({
                 <button
                   key={i}
                   onClick={() => setActiveImg(i)}
+                  aria-label={`Ver imagen ${i + 1} de ${images.length}`}
                   style={{
                     flex: 1, height: isMobile ? 60 : 80, padding: 0, border: `2px solid ${i === activeImg ? '#00c8ff' : '#1e2535'}`,
                     borderRadius: 10, overflow: 'hidden', cursor: 'pointer', background: '#161b27',
                     transition: 'border-color 0.2s',
                   }}
                 >
-                  <img src={img} alt={`Vista ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <img src={img} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 </button>
               ))}
             </div>
@@ -1413,6 +972,7 @@ function ProductDetail({
             </button>
             <button
               onClick={onToggleWishlist}
+              aria-label={inWishlist ? 'Quitar de favoritos' : 'Agregar a favoritos'}
               style={{
                 width: 52, height: 52,
                 background: inWishlist ? '#7c3aed22' : '#161b27',
@@ -1511,7 +1071,7 @@ function CartPanel({
               {totalItems} {totalItems === 1 ? 'artículo' : 'artículos'}
             </div>
           </div>
-          <button onClick={onClose} style={{ background: '#161b27', border: '1px solid #1e2535', borderRadius: 8, width: 36, height: 36, cursor: 'pointer', color: '#6b7280', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+          <button onClick={onClose} aria-label="Cerrar carrito" style={{ background: '#161b27', border: '1px solid #1e2535', borderRadius: 8, width: 36, height: 36, cursor: 'pointer', color: '#6b7280', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
         </div>
 
         {/* Items */}
@@ -1533,6 +1093,7 @@ function CartPanel({
                   <div style={{ display: 'flex', alignItems: 'center', gap: 0, background: '#0e1117', border: '1px solid #1e2535', borderRadius: 8, overflow: 'hidden' }}>
                     <button
                       onClick={() => onUpdateQty(product.id, -1)}
+                      aria-label={`Restar una unidad de ${product.name}`}
                       style={{ width: 30, height: 30, background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'color 0.15s' }}
                       onMouseEnter={e => (e.currentTarget.style.color = '#ef4444')}
                       onMouseLeave={e => (e.currentTarget.style.color = '#9ca3af')}
@@ -1540,6 +1101,7 @@ function CartPanel({
                     <span style={{ minWidth: 28, textAlign: 'center', fontSize: 13, fontWeight: 700, color: '#e8eaf0', fontFamily: 'Outfit, sans-serif' }}>{qty}</span>
                     <button
                       onClick={() => onUpdateQty(product.id, 1)}
+                      aria-label={`Sumar una unidad de ${product.name}`}
                       style={{ width: 30, height: 30, background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'color 0.15s' }}
                       onMouseEnter={e => (e.currentTarget.style.color = '#00c8ff')}
                       onMouseLeave={e => (e.currentTarget.style.color = '#9ca3af')}
@@ -1553,6 +1115,7 @@ function CartPanel({
                   <button
                     onClick={() => onRemove(product.id)}
                     title="Eliminar"
+                    aria-label={`Quitar ${product.name} del carrito`}
                     style={{ width: 30, height: 30, background: 'none', border: '1px solid #1e2535', borderRadius: 6, color: '#6b7280', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}
                     onMouseEnter={e => { (e.currentTarget.style.color = '#ef4444'); (e.currentTarget.style.borderColor = '#ef444444') }}
                     onMouseLeave={e => { (e.currentTarget.style.color = '#6b7280'); (e.currentTarget.style.borderColor = '#1e2535') }}
@@ -1606,7 +1169,16 @@ const STATUS_COLOR: Record<OrderStatus, string> = {
 
 function OrdersPanel({ user, onClose }: { user: { name: string; email: string }; onClose: () => void }) {
   const isMobile = useIsMobile()
-  const orders = loadOrders(user.email)
+  const [orders, setOrders] = useState<Order[] | null>(null)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let active = true
+    fetchMyOrders(user.email)
+      .then(data => { if (active) setOrders(data) })
+      .catch(() => { if (active) setError('No pudimos cargar tus pedidos. Intentá de nuevo más tarde.') })
+    return () => { active = false }
+  }, [user.email])
 
   return (
     <>
@@ -1622,13 +1194,19 @@ function OrdersPanel({ user, onClose }: { user: { name: string; email: string };
         <div style={{ padding: '20px 24px', borderBottom: '1px solid #1e2535', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 700, fontSize: 20, color: '#e8eaf0' }}>📦 Mis pedidos</div>
-            <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>{orders.length} {orders.length === 1 ? 'pedido' : 'pedidos'}</div>
+            <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+              {orders ? `${orders.length} ${orders.length === 1 ? 'pedido' : 'pedidos'}` : 'Cargando…'}
+            </div>
           </div>
-          <button onClick={onClose} style={{ background: '#161b27', border: '1px solid #1e2535', borderRadius: 8, width: 36, height: 36, cursor: 'pointer', color: '#6b7280', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+          <button onClick={onClose} aria-label="Cerrar mis pedidos" style={{ background: '#161b27', border: '1px solid #1e2535', borderRadius: 8, width: 36, height: 36, cursor: 'pointer', color: '#6b7280', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {orders.length === 0 ? (
+          {error ? (
+            <div style={{ textAlign: 'center', padding: '40px 0', color: '#ef4444', fontSize: 13 }}>{error}</div>
+          ) : orders === null ? (
+            <div style={{ textAlign: 'center', padding: '40px 0', color: '#6b7280', fontSize: 13 }}>Cargando tus pedidos…</div>
+          ) : orders.length === 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#6b7280' }}>
               <div style={{ fontSize: 52, marginBottom: 16 }}>📦</div>
               <div style={{ fontFamily: 'Outfit, sans-serif', fontSize: 18, fontWeight: 600, color: '#4b5563' }}>Todavía no hiciste ningún pedido</div>
@@ -1681,25 +1259,32 @@ function CheckoutModal({
   total,
   user,
   onClose,
+  onSubmitOrder,
   onComplete,
 }: {
   total: number
   user: User
   onClose: () => void
-  onComplete: (info: CheckoutInfo) => void
+  onSubmitOrder: (info: CheckoutInfo) => Promise<void>
+  onComplete: () => void
 }) {
   const [step, setStep] = useState<'form' | 'processing' | 'done'>('form')
-  const [form, setForm] = useState(() => {
-    const stored = user ? loadUsers()[user.email] : undefined
-    return {
-      name: stored?.name ?? user?.name ?? '',
-      email: user?.email ?? '',
-      address: stored?.address ?? '',
-      city: '',
-      cardNumber: '', cardExpiry: '', cardCvv: '',
-    }
+  const [form, setForm] = useState({
+    name: user?.name ?? '', email: user?.email ?? '', address: '', city: '',
+    cardNumber: '', cardExpiry: '', cardCvv: '',
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [submitError, setSubmitError] = useState('')
+
+  // Precarga la dirección guardada si el usuario tiene sesión iniciada.
+  useEffect(() => {
+    if (!user) return
+    let active = true
+    fetchProfile(user.id)
+      .then(profile => { if (active && profile?.address) setForm(f => ({ ...f, address: profile.address ?? f.address })) })
+      .catch(() => {})
+    return () => { active = false }
+  }, [user])
 
   const update = (field: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(prev => ({ ...prev, [field]: e.target.value }))
@@ -1717,12 +1302,18 @@ function CheckoutModal({
     return Object.keys(errs).length === 0
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!validate()) return
+    setSubmitError('')
     setStep('processing')
-    // Simulación de pago — no se procesa ningún cobro real
-    setTimeout(() => setStep('done'), 1500)
+    try {
+      await onSubmitOrder({ name: form.name, email: form.email, address: form.address, city: form.city })
+      setStep('done')
+    } catch {
+      setSubmitError('No pudimos confirmar tu pedido. Probá de nuevo en unos segundos.')
+      setStep('form')
+    }
   }
 
   const inputStyle = (field: string): React.CSSProperties => ({
@@ -1730,6 +1321,7 @@ function CheckoutModal({
     borderRadius: 8, color: '#e8eaf0', fontSize: 13, padding: '10px 12px',
     fontFamily: 'Inter, sans-serif', boxSizing: 'border-box',
   })
+  const labelStyle: React.CSSProperties = { fontSize: 12, color: '#9ca3af', fontWeight: 500, display: 'block', marginBottom: 4 }
 
   return (
     <>
@@ -1750,7 +1342,7 @@ function CheckoutModal({
               Te enviamos un correo a {form.email} con los detalles del pedido.
             </div>
             <button
-              onClick={() => onComplete({ name: form.name, email: form.email, address: form.address, city: form.city })}
+              onClick={onComplete}
               style={{ width: '100%', background: 'linear-gradient(135deg,#00c8ff,#7c3aed)', border: 'none', borderRadius: 10, color: '#07090f', fontFamily: 'Outfit, sans-serif', fontWeight: 700, fontSize: 15, padding: '13px', cursor: 'pointer' }}
             >
               Continuar
@@ -1763,47 +1355,56 @@ function CheckoutModal({
                 🔒 Checkout
               </div>
               {step === 'form' && (
-                <button type="button" onClick={onClose} style={{ background: '#161b27', border: '1px solid #1e2535', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', color: '#6b7280' }}>✕</button>
+                <button type="button" onClick={onClose} aria-label="Cerrar" style={{ background: '#161b27', border: '1px solid #1e2535', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', color: '#6b7280' }}>✕</button>
               )}
             </div>
 
             <div style={{ fontSize: 12, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8, fontWeight: 600 }}>Datos de envío</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 18 }}>
               <div>
-                <input placeholder="Nombre completo" value={form.name} onChange={update('name')} style={inputStyle('name')} disabled={step === 'processing'} />
+                <label style={labelStyle} htmlFor="checkout-name">Nombre completo</label>
+                <input id="checkout-name" placeholder="Juan Pérez" value={form.name} onChange={update('name')} style={inputStyle('name')} disabled={step === 'processing'} />
                 {errors.name && <div style={{ color: '#ef4444', fontSize: 11, marginTop: 4 }}>{errors.name}</div>}
               </div>
               <div>
-                <input placeholder="Email" value={form.email} onChange={update('email')} style={inputStyle('email')} disabled={step === 'processing'} />
+                <label style={labelStyle} htmlFor="checkout-email">Email</label>
+                <input id="checkout-email" placeholder="tu@email.com" value={form.email} onChange={update('email')} style={inputStyle('email')} disabled={step === 'processing'} />
                 {errors.email && <div style={{ color: '#ef4444', fontSize: 11, marginTop: 4 }}>{errors.email}</div>}
               </div>
               <div>
-                <input placeholder="Dirección" value={form.address} onChange={update('address')} style={inputStyle('address')} disabled={step === 'processing'} />
+                <label style={labelStyle} htmlFor="checkout-address">Dirección</label>
+                <input id="checkout-address" placeholder="Calle y número" value={form.address} onChange={update('address')} style={inputStyle('address')} disabled={step === 'processing'} />
                 {errors.address && <div style={{ color: '#ef4444', fontSize: 11, marginTop: 4 }}>{errors.address}</div>}
               </div>
               <div>
-                <input placeholder="Ciudad" value={form.city} onChange={update('city')} style={inputStyle('city')} disabled={step === 'processing'} />
+                <label style={labelStyle} htmlFor="checkout-city">Ciudad</label>
+                <input id="checkout-city" placeholder="Buenos Aires" value={form.city} onChange={update('city')} style={inputStyle('city')} disabled={step === 'processing'} />
                 {errors.city && <div style={{ color: '#ef4444', fontSize: 11, marginTop: 4 }}>{errors.city}</div>}
               </div>
             </div>
 
             <div style={{ fontSize: 12, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8, fontWeight: 600 }}>Pago</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 22 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 14 }}>
               <div>
-                <input placeholder="Número de tarjeta" value={form.cardNumber} onChange={update('cardNumber')} style={inputStyle('cardNumber')} disabled={step === 'processing'} />
+                <label style={labelStyle} htmlFor="checkout-card">Número de tarjeta</label>
+                <input id="checkout-card" placeholder="1234 5678 9012 3456" value={form.cardNumber} onChange={update('cardNumber')} style={inputStyle('cardNumber')} disabled={step === 'processing'} />
                 {errors.cardNumber && <div style={{ color: '#ef4444', fontSize: 11, marginTop: 4 }}>{errors.cardNumber}</div>}
               </div>
               <div style={{ display: 'flex', gap: 10 }}>
                 <div style={{ flex: 1 }}>
-                  <input placeholder="MM/AA" value={form.cardExpiry} onChange={update('cardExpiry')} style={inputStyle('cardExpiry')} disabled={step === 'processing'} />
+                  <label style={labelStyle} htmlFor="checkout-expiry">Vencimiento</label>
+                  <input id="checkout-expiry" placeholder="MM/AA" value={form.cardExpiry} onChange={update('cardExpiry')} style={inputStyle('cardExpiry')} disabled={step === 'processing'} />
                   {errors.cardExpiry && <div style={{ color: '#ef4444', fontSize: 11, marginTop: 4 }}>{errors.cardExpiry}</div>}
                 </div>
                 <div style={{ flex: 1 }}>
-                  <input placeholder="CVV" value={form.cardCvv} onChange={update('cardCvv')} style={inputStyle('cardCvv')} disabled={step === 'processing'} />
+                  <label style={labelStyle} htmlFor="checkout-cvv">CVV</label>
+                  <input id="checkout-cvv" placeholder="123" value={form.cardCvv} onChange={update('cardCvv')} style={inputStyle('cardCvv')} disabled={step === 'processing'} />
                   {errors.cardCvv && <div style={{ color: '#ef4444', fontSize: 11, marginTop: 4 }}>{errors.cardCvv}</div>}
                 </div>
               </div>
             </div>
+
+            {submitError && <div style={{ fontSize: 12, color: '#ef4444', background: '#ef444411', border: '1px solid #ef444422', borderRadius: 6, padding: '8px 12px', marginBottom: 14 }}>{submitError}</div>}
 
             <button
               type="submit"
@@ -1830,8 +1431,9 @@ function CheckoutModal({
 }
 
 // ── Login Modal ───────────────────────────────────────────────────────────────
-function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (u: User) => void }) {
+function LoginModal({ onClose }: { onClose: () => void }) {
   const [mode, setMode] = useState<'login' | 'register' | 'forgot'>('login')
+  const [loading, setLoading] = useState(false)
 
   // Login state
   const [email, setEmail] = useState('')
@@ -1844,58 +1446,71 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (u: Us
   const [regPassword, setRegPassword] = useState('')
   const [regPassword2, setRegPassword2] = useState('')
   const [regError, setRegError] = useState('')
+  const [regCheckEmail, setRegCheckEmail] = useState(false)
 
   // Forgot password state
   const [fpEmail, setFpEmail] = useState('')
-  const [fpPassword, setFpPassword] = useState('')
-  const [fpPassword2, setFpPassword2] = useState('')
   const [fpError, setFpError] = useState('')
   const [fpDone, setFpDone] = useState(false)
 
   const switchMode = (m: typeof mode) => {
     setMode(m)
-    setError(''); setRegError(''); setFpError(''); setFpDone(false)
+    setError(''); setRegError(''); setFpError(''); setFpDone(false); setRegCheckEmail(false)
   }
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    const users = loadUsers()
-    const found = users[email.toLowerCase()]
-    if (found && found.password === password) {
-      onLogin({ name: found.name, email: email.toLowerCase(), isAdmin: found.isAdmin })
-      onClose()
-    } else {
+    setError('')
+    setLoading(true)
+    const { error: authError } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
+    setLoading(false)
+    if (authError) {
       setError('Email o contraseña incorrectos')
+      return
     }
-  }
-
-  const handleRegister = (e: React.FormEvent) => {
-    e.preventDefault()
-    const key = regEmail.toLowerCase().trim()
-    if (!regName.trim()) return setRegError('Ingresá tu nombre')
-    if (!/^\S+@\S+\.\S+$/.test(key)) return setRegError('Email inválido')
-    if (regPassword.length < 4) return setRegError('La contraseña debe tener al menos 4 caracteres')
-    if (regPassword !== regPassword2) return setRegError('Las contraseñas no coinciden')
-
-    const users = loadUsers()
-    if (users[key]) return setRegError('Ya existe una cuenta con ese email')
-
-    users[key] = { password: regPassword, name: regName.trim(), isAdmin: false }
-    saveUsers(users)
-    onLogin({ name: regName.trim(), email: key, isAdmin: false })
     onClose()
   }
 
-  const handleForgot = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
-    const key = fpEmail.toLowerCase().trim()
-    const users = loadUsers()
-    if (!users[key]) return setFpError('No existe ninguna cuenta con ese email')
-    if (fpPassword.length < 4) return setFpError('La contraseña debe tener al menos 4 caracteres')
-    if (fpPassword !== fpPassword2) return setFpError('Las contraseñas no coinciden')
+    setRegError('')
+    if (!regName.trim()) return setRegError('Ingresá tu nombre')
+    if (!/^\S+@\S+\.\S+$/.test(regEmail)) return setRegError('Email inválido')
+    if (regPassword.length < 6) return setRegError('La contraseña debe tener al menos 6 caracteres')
+    if (regPassword !== regPassword2) return setRegError('Las contraseñas no coinciden')
 
-    users[key] = { ...users[key], password: fpPassword }
-    saveUsers(users)
+    setLoading(true)
+    const { data, error: authError } = await supabase.auth.signUp({
+      email: regEmail.trim(),
+      password: regPassword,
+      options: { data: { name: regName.trim() } },
+    })
+    setLoading(false)
+
+    if (authError) {
+      setRegError(authError.message.includes('already registered') ? 'Ya existe una cuenta con ese email' : 'No pudimos crear la cuenta. Probá de nuevo.')
+      return
+    }
+    if (data.session) {
+      onClose()
+    } else {
+      setRegCheckEmail(true)
+    }
+  }
+
+  const handleForgot = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setFpError('')
+    if (!/^\S+@\S+\.\S+$/.test(fpEmail)) return setFpError('Email inválido')
+    setLoading(true)
+    const { error: authError } = await supabase.auth.resetPasswordForEmail(fpEmail.trim(), {
+      redirectTo: window.location.origin,
+    })
+    setLoading(false)
+    if (authError) {
+      setFpError('No pudimos enviar el email. Probá de nuevo.')
+      return
+    }
     setFpDone(true)
   }
 
@@ -1908,7 +1523,7 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (u: Us
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
       <div style={{ background: '#0e1117', border: '1px solid #1e2535', borderRadius: 16, padding: 36, width: 380, maxWidth: '90vw', maxHeight: '88vh', overflowY: 'auto', position: 'relative', boxSizing: 'border-box' }}>
-        <button onClick={onClose} style={{ position: 'absolute', top: 16, right: 16, background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: 18 }}>✕</button>
+        <button onClick={onClose} aria-label="Cerrar" style={{ position: 'absolute', top: 16, right: 16, background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: 18 }}>✕</button>
 
         {mode === 'login' && (
           <>
@@ -1916,12 +1531,12 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (u: Us
             <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 28 }}>Accedé a tu cuenta de TecnoShop</div>
             <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
-                <label style={labelStyle}>Email</label>
-                <input type="email" value={email} onChange={e => { setEmail(e.target.value); setError('') }} placeholder="tu@email.com" required style={inputStyle} />
+                <label style={labelStyle} htmlFor="login-email">Email</label>
+                <input id="login-email" type="email" value={email} onChange={e => { setEmail(e.target.value); setError('') }} placeholder="tu@email.com" required style={inputStyle} disabled={loading} />
               </div>
               <div>
-                <label style={labelStyle}>Contraseña</label>
-                <input type="password" value={password} onChange={e => { setPassword(e.target.value); setError('') }} placeholder="••••••••" required style={inputStyle} />
+                <label style={labelStyle} htmlFor="login-password">Contraseña</label>
+                <input id="login-password" type="password" value={password} onChange={e => { setPassword(e.target.value); setError('') }} placeholder="••••••••" required style={inputStyle} disabled={loading} />
               </div>
               {error && (
                 <div style={{ fontSize: 12, color: '#ef4444', background: '#ef444411', border: '1px solid #ef444422', borderRadius: 6, padding: '8px 12px' }}>
@@ -1933,8 +1548,8 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (u: Us
                   </div>
                 </div>
               )}
-              <button type="submit" style={{ background: 'linear-gradient(135deg,#00c8ff,#7c3aed)', border: 'none', borderRadius: 8, color: '#fff', fontFamily: 'Outfit, sans-serif', fontWeight: 700, fontSize: 15, padding: '12px', cursor: 'pointer', marginTop: 4 }}>
-                Ingresar
+              <button type="submit" disabled={loading} style={{ background: 'linear-gradient(135deg,#00c8ff,#7c3aed)', border: 'none', borderRadius: 8, color: '#fff', fontFamily: 'Outfit, sans-serif', fontWeight: 700, fontSize: 15, padding: '12px', cursor: loading ? 'default' : 'pointer', opacity: loading ? 0.7 : 1, marginTop: 4 }}>
+                {loading ? 'Ingresando…' : 'Ingresar'}
               </button>
             </form>
             <div style={{ marginTop: 20, fontSize: 13, color: '#6b7280', textAlign: 'center' }}>
@@ -1949,35 +1564,45 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (u: Us
         {mode === 'register' && (
           <>
             <div style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 800, fontSize: 24, color: '#e8eaf0', marginBottom: 6 }}>Crear cuenta</div>
-            <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 28 }}>Registrate para comprar en TecnoShop</div>
-            <form onSubmit={handleRegister} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div>
-                <label style={labelStyle}>Nombre</label>
-                <input value={regName} onChange={e => { setRegName(e.target.value); setRegError('') }} placeholder="Tu nombre" required style={inputStyle} />
-              </div>
-              <div>
-                <label style={labelStyle}>Email</label>
-                <input type="email" value={regEmail} onChange={e => { setRegEmail(e.target.value); setRegError('') }} placeholder="tu@email.com" required style={inputStyle} />
-              </div>
-              <div>
-                <label style={labelStyle}>Contraseña</label>
-                <input type="password" value={regPassword} onChange={e => { setRegPassword(e.target.value); setRegError('') }} placeholder="••••••••" required style={inputStyle} />
-              </div>
-              <div>
-                <label style={labelStyle}>Repetir contraseña</label>
-                <input type="password" value={regPassword2} onChange={e => { setRegPassword2(e.target.value); setRegError('') }} placeholder="••••••••" required style={inputStyle} />
-              </div>
-              {regError && <div style={{ fontSize: 12, color: '#ef4444', background: '#ef444411', border: '1px solid #ef444422', borderRadius: 6, padding: '8px 12px' }}>{regError}</div>}
-              <button type="submit" style={{ background: 'linear-gradient(135deg,#00c8ff,#7c3aed)', border: 'none', borderRadius: 8, color: '#fff', fontFamily: 'Outfit, sans-serif', fontWeight: 700, fontSize: 15, padding: '12px', cursor: 'pointer', marginTop: 4 }}>
-                Crear cuenta
-              </button>
-            </form>
-            <div style={{ marginTop: 20, fontSize: 13, color: '#6b7280', textAlign: 'center' }}>
-              ¿Ya tenés cuenta?{' '}
-              <span onClick={() => switchMode('login')} style={{ color: '#00c8ff', cursor: 'pointer', textDecoration: 'underline' }}>
-                Iniciá sesión
-              </span>
+            <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 28 }}>
+              {regCheckEmail ? 'Revisá tu correo para confirmar la cuenta.' : 'Registrate para comprar en TecnoShop'}
             </div>
+            {regCheckEmail ? (
+              <button onClick={() => switchMode('login')} style={{ width: '100%', background: 'linear-gradient(135deg,#00c8ff,#7c3aed)', border: 'none', borderRadius: 8, color: '#fff', fontFamily: 'Outfit, sans-serif', fontWeight: 700, fontSize: 15, padding: '12px', cursor: 'pointer' }}>
+                Iniciar sesión
+              </button>
+            ) : (
+              <form onSubmit={handleRegister} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div>
+                  <label style={labelStyle} htmlFor="reg-name">Nombre</label>
+                  <input id="reg-name" value={regName} onChange={e => { setRegName(e.target.value); setRegError('') }} placeholder="Tu nombre" required style={inputStyle} disabled={loading} />
+                </div>
+                <div>
+                  <label style={labelStyle} htmlFor="reg-email">Email</label>
+                  <input id="reg-email" type="email" value={regEmail} onChange={e => { setRegEmail(e.target.value); setRegError('') }} placeholder="tu@email.com" required style={inputStyle} disabled={loading} />
+                </div>
+                <div>
+                  <label style={labelStyle} htmlFor="reg-password">Contraseña</label>
+                  <input id="reg-password" type="password" value={regPassword} onChange={e => { setRegPassword(e.target.value); setRegError('') }} placeholder="••••••••" required style={inputStyle} disabled={loading} />
+                </div>
+                <div>
+                  <label style={labelStyle} htmlFor="reg-password2">Repetir contraseña</label>
+                  <input id="reg-password2" type="password" value={regPassword2} onChange={e => { setRegPassword2(e.target.value); setRegError('') }} placeholder="••••••••" required style={inputStyle} disabled={loading} />
+                </div>
+                {regError && <div style={{ fontSize: 12, color: '#ef4444', background: '#ef444411', border: '1px solid #ef444422', borderRadius: 6, padding: '8px 12px' }}>{regError}</div>}
+                <button type="submit" disabled={loading} style={{ background: 'linear-gradient(135deg,#00c8ff,#7c3aed)', border: 'none', borderRadius: 8, color: '#fff', fontFamily: 'Outfit, sans-serif', fontWeight: 700, fontSize: 15, padding: '12px', cursor: loading ? 'default' : 'pointer', opacity: loading ? 0.7 : 1, marginTop: 4 }}>
+                  {loading ? 'Creando cuenta…' : 'Crear cuenta'}
+                </button>
+              </form>
+            )}
+            {!regCheckEmail && (
+              <div style={{ marginTop: 20, fontSize: 13, color: '#6b7280', textAlign: 'center' }}>
+                ¿Ya tenés cuenta?{' '}
+                <span onClick={() => switchMode('login')} style={{ color: '#00c8ff', cursor: 'pointer', textDecoration: 'underline' }}>
+                  Iniciá sesión
+                </span>
+              </div>
+            )}
           </>
         )}
 
@@ -1985,29 +1610,21 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (u: Us
           <>
             <div style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 800, fontSize: 24, color: '#e8eaf0', marginBottom: 6 }}>Recuperar contraseña</div>
             <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 28 }}>
-              {fpDone ? 'Tu contraseña fue actualizada.' : 'Ingresá tu email y elegí una nueva contraseña'}
+              {fpDone ? 'Te enviamos un correo con un link para elegir una nueva contraseña.' : 'Ingresá tu email y te mandamos un link para recuperarla'}
             </div>
             {fpDone ? (
               <button onClick={() => switchMode('login')} style={{ width: '100%', background: 'linear-gradient(135deg,#00c8ff,#7c3aed)', border: 'none', borderRadius: 8, color: '#fff', fontFamily: 'Outfit, sans-serif', fontWeight: 700, fontSize: 15, padding: '12px', cursor: 'pointer' }}>
-                Iniciar sesión
+                Volver a iniciar sesión
               </button>
             ) : (
               <form onSubmit={handleForgot} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 <div>
-                  <label style={labelStyle}>Email</label>
-                  <input type="email" value={fpEmail} onChange={e => { setFpEmail(e.target.value); setFpError('') }} placeholder="tu@email.com" required style={inputStyle} />
-                </div>
-                <div>
-                  <label style={labelStyle}>Nueva contraseña</label>
-                  <input type="password" value={fpPassword} onChange={e => { setFpPassword(e.target.value); setFpError('') }} placeholder="••••••••" required style={inputStyle} />
-                </div>
-                <div>
-                  <label style={labelStyle}>Repetir nueva contraseña</label>
-                  <input type="password" value={fpPassword2} onChange={e => { setFpPassword2(e.target.value); setFpError('') }} placeholder="••••••••" required style={inputStyle} />
+                  <label style={labelStyle} htmlFor="fp-email">Email</label>
+                  <input id="fp-email" type="email" value={fpEmail} onChange={e => { setFpEmail(e.target.value); setFpError('') }} placeholder="tu@email.com" required style={inputStyle} disabled={loading} />
                 </div>
                 {fpError && <div style={{ fontSize: 12, color: '#ef4444', background: '#ef444411', border: '1px solid #ef444422', borderRadius: 6, padding: '8px 12px' }}>{fpError}</div>}
-                <button type="submit" style={{ background: 'linear-gradient(135deg,#00c8ff,#7c3aed)', border: 'none', borderRadius: 8, color: '#fff', fontFamily: 'Outfit, sans-serif', fontWeight: 700, fontSize: 15, padding: '12px', cursor: 'pointer', marginTop: 4 }}>
-                  Actualizar contraseña
+                <button type="submit" disabled={loading} style={{ background: 'linear-gradient(135deg,#00c8ff,#7c3aed)', border: 'none', borderRadius: 8, color: '#fff', fontFamily: 'Outfit, sans-serif', fontWeight: 700, fontSize: 15, padding: '12px', cursor: loading ? 'default' : 'pointer', opacity: loading ? 0.7 : 1, marginTop: 4 }}>
+                  {loading ? 'Enviando…' : 'Enviar link'}
                 </button>
               </form>
             )}
@@ -2025,56 +1642,126 @@ function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: (u: Us
   )
 }
 
+// ── Restablecer contraseña (llega acá desde el link del correo) ──────────────
+function ResetPasswordModal({ onClose }: { onClose: () => void }) {
+  const [password, setPassword] = useState('')
+  const [password2, setPassword2] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [done, setDone] = useState(false)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+    if (password.length < 6) return setError('La contraseña debe tener al menos 6 caracteres')
+    if (password !== password2) return setError('Las contraseñas no coinciden')
+    setLoading(true)
+    const { error: authError } = await supabase.auth.updateUser({ password })
+    setLoading(false)
+    if (authError) { setError('No pudimos actualizar la contraseña. Probá de nuevo.'); return }
+    setDone(true)
+  }
+
+  const inputStyle: React.CSSProperties = { width: '100%', background: '#161b27', border: '1px solid #1e2535', borderRadius: 8, color: '#e8eaf0', fontFamily: 'Inter, sans-serif', fontSize: 14, padding: '10px 14px', outline: 'none', boxSizing: 'border-box' }
+  const labelStyle: React.CSSProperties = { fontSize: 12, color: '#9ca3af', fontWeight: 500, display: 'block', marginBottom: 6 }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
+      <div style={{ background: '#0e1117', border: '1px solid #1e2535', borderRadius: 16, padding: 36, width: 380, maxWidth: '90vw', boxSizing: 'border-box' }}>
+        <div style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 800, fontSize: 22, color: '#e8eaf0', marginBottom: 6 }}>🔑 Nueva contraseña</div>
+        {done ? (
+          <>
+            <div style={{ fontSize: 13, color: '#10b981', marginBottom: 24 }}>Tu contraseña se actualizó correctamente.</div>
+            <button onClick={onClose} style={{ width: '100%', background: 'linear-gradient(135deg,#00c8ff,#7c3aed)', border: 'none', borderRadius: 8, color: '#fff', fontFamily: 'Outfit, sans-serif', fontWeight: 700, fontSize: 15, padding: '12px', cursor: 'pointer' }}>
+              Continuar
+            </button>
+          </>
+        ) : (
+          <>
+            <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 24 }}>Elegí tu nueva contraseña para entrar a TecnoShop.</div>
+            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div>
+                <label style={labelStyle} htmlFor="reset-password">Nueva contraseña</label>
+                <input id="reset-password" type="password" value={password} onChange={e => { setPassword(e.target.value); setError('') }} placeholder="••••••••" required style={inputStyle} disabled={loading} />
+              </div>
+              <div>
+                <label style={labelStyle} htmlFor="reset-password2">Repetir contraseña</label>
+                <input id="reset-password2" type="password" value={password2} onChange={e => { setPassword2(e.target.value); setError('') }} placeholder="••••••••" required style={inputStyle} disabled={loading} />
+              </div>
+              {error && <div style={{ fontSize: 12, color: '#ef4444', background: '#ef444411', border: '1px solid #ef444422', borderRadius: 6, padding: '8px 12px' }}>{error}</div>}
+              <button type="submit" disabled={loading} style={{ background: 'linear-gradient(135deg,#00c8ff,#7c3aed)', border: 'none', borderRadius: 8, color: '#fff', fontFamily: 'Outfit, sans-serif', fontWeight: 700, fontSize: 15, padding: '12px', cursor: loading ? 'default' : 'pointer', opacity: loading ? 0.7 : 1, marginTop: 4 }}>
+                {loading ? 'Guardando…' : 'Guardar contraseña'}
+              </button>
+            </form>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Configuración de cuenta ───────────────────────────────────────────────────
 function SettingsModal({
   user,
   onClose,
   onUserUpdate,
 }: {
-  user: { name: string; email: string; isAdmin: boolean }
+  user: { id: string; name: string; email: string; isAdmin: boolean }
   onClose: () => void
   onUserUpdate: (u: User) => void
 }) {
-  const stored = loadUsers()[user.email]
-  const [name, setName] = useState(stored?.name ?? user.name)
-  const [address, setAddress] = useState(stored?.address ?? '')
-  const [phone, setPhone] = useState(stored?.phone ?? '')
+  const [name, setName] = useState(user.name)
+  const [address, setAddress] = useState('')
+  const [phone, setPhone] = useState('')
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [newPassword2, setNewPassword2] = useState('')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    let active = true
+    fetchProfile(user.id)
+      .then(profile => {
+        if (!active || !profile) return
+        setName(profile.name || user.name)
+        setAddress(profile.address ?? '')
+        setPhone(profile.phone ?? '')
+      })
+      .catch(() => { if (active) setError('No pudimos cargar tu perfil.') })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [user.id, user.name])
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
     setSuccess(false)
-
-    const users = loadUsers()
-    const found = users[user.email]
-    if (!found) { setError('No se encontró la cuenta'); return }
     if (!name.trim()) { setError('Ingresá tu nombre'); return }
 
-    let passwordToSave = found.password
-    const wantsPasswordChange = currentPassword || newPassword || newPassword2
-    if (wantsPasswordChange) {
-      if (found.password !== currentPassword) { setError('La contraseña actual no coincide'); return }
-      if (newPassword.length < 4) { setError('La nueva contraseña debe tener al menos 4 caracteres'); return }
-      if (newPassword !== newPassword2) { setError('Las contraseñas nuevas no coinciden'); return }
-      passwordToSave = newPassword
-    }
+    const wantsPasswordChange = !!(currentPassword || newPassword || newPassword2)
+    setSaving(true)
+    try {
+      if (wantsPasswordChange) {
+        if (newPassword.length < 6) throw new Error('La nueva contraseña debe tener al menos 6 caracteres')
+        if (newPassword !== newPassword2) throw new Error('Las contraseñas nuevas no coinciden')
+        const { error: signInError } = await supabase.auth.signInWithPassword({ email: user.email, password: currentPassword })
+        if (signInError) throw new Error('La contraseña actual no coincide')
+        const { error: updateError } = await supabase.auth.updateUser({ password: newPassword })
+        if (updateError) throw new Error('No pudimos actualizar la contraseña')
+      }
 
-    users[user.email] = {
-      ...found,
-      name: name.trim(),
-      address: address.trim() || undefined,
-      phone: phone.trim() || undefined,
-      password: passwordToSave,
+      await updateProfile(user.id, { name: name.trim(), address: address.trim() || undefined, phone: phone.trim() || undefined })
+      onUserUpdate({ id: user.id, name: name.trim(), email: user.email, isAdmin: user.isAdmin })
+      setSuccess(true)
+      setCurrentPassword(''); setNewPassword(''); setNewPassword2('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No pudimos guardar los cambios')
+    } finally {
+      setSaving(false)
     }
-    saveUsers(users)
-    onUserUpdate({ name: name.trim(), email: user.email, isAdmin: found.isAdmin })
-    setSuccess(true)
-    setCurrentPassword(''); setNewPassword(''); setNewPassword2('')
   }
 
   const inputStyle: React.CSSProperties = { width: '100%', background: '#161b27', border: '1px solid #1e2535', borderRadius: 8, color: '#e8eaf0', fontFamily: 'Inter, sans-serif', fontSize: 14, padding: '10px 14px', outline: 'none', boxSizing: 'border-box' }
@@ -2086,47 +1773,51 @@ function SettingsModal({
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
       <div style={{ background: '#0e1117', border: '1px solid #1e2535', borderRadius: 16, padding: 36, width: 420, maxWidth: '90vw', maxHeight: '88vh', overflowY: 'auto', position: 'relative', boxSizing: 'border-box' }}>
-        <button onClick={onClose} style={{ position: 'absolute', top: 16, right: 16, background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: 18 }}>✕</button>
+        <button onClick={onClose} aria-label="Cerrar" style={{ position: 'absolute', top: 16, right: 16, background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: 18 }}>✕</button>
 
         <div style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 800, fontSize: 24, color: '#e8eaf0', marginBottom: 6 }}>⚙️ Configuración</div>
         <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 24 }}>{user.email}</div>
 
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div>
-            <label style={labelStyle}>Nombre</label>
-            <input value={name} onChange={e => { setName(e.target.value); setError('') }} style={inputStyle} />
-          </div>
-          <div>
-            <label style={labelStyle}>Dirección de envío</label>
-            <input value={address} onChange={e => { setAddress(e.target.value); setError('') }} placeholder="Calle, número, ciudad" style={inputStyle} />
-          </div>
-          <div>
-            <label style={labelStyle}>Teléfono</label>
-            <input value={phone} onChange={e => { setPhone(e.target.value); setError('') }} placeholder="Opcional" style={inputStyle} />
-          </div>
+        {loading ? (
+          <div style={{ fontSize: 13, color: '#6b7280', textAlign: 'center', padding: '20px 0' }}>Cargando tu perfil…</div>
+        ) : (
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div>
+              <label style={labelStyle} htmlFor="settings-name">Nombre</label>
+              <input id="settings-name" value={name} onChange={e => { setName(e.target.value); setError('') }} style={inputStyle} disabled={saving} />
+            </div>
+            <div>
+              <label style={labelStyle} htmlFor="settings-address">Dirección de envío</label>
+              <input id="settings-address" value={address} onChange={e => { setAddress(e.target.value); setError('') }} placeholder="Calle, número, ciudad" style={inputStyle} disabled={saving} />
+            </div>
+            <div>
+              <label style={labelStyle} htmlFor="settings-phone">Teléfono</label>
+              <input id="settings-phone" value={phone} onChange={e => { setPhone(e.target.value); setError('') }} placeholder="Opcional" style={inputStyle} disabled={saving} />
+            </div>
 
-          <div style={{ height: 1, background: '#1e2535', margin: '4px 0' }} />
-          <div style={{ fontSize: 12, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600 }}>Cambiar contraseña (opcional)</div>
-          <div>
-            <label style={labelStyle}>Contraseña actual</label>
-            <input type="password" value={currentPassword} onChange={e => { setCurrentPassword(e.target.value); setError('') }} placeholder="••••••••" style={inputStyle} />
-          </div>
-          <div>
-            <label style={labelStyle}>Nueva contraseña</label>
-            <input type="password" value={newPassword} onChange={e => { setNewPassword(e.target.value); setError('') }} placeholder="••••••••" style={inputStyle} />
-          </div>
-          <div>
-            <label style={labelStyle}>Repetir nueva contraseña</label>
-            <input type="password" value={newPassword2} onChange={e => { setNewPassword2(e.target.value); setError('') }} placeholder="••••••••" style={inputStyle} />
-          </div>
+            <div style={{ height: 1, background: '#1e2535', margin: '4px 0' }} />
+            <div style={{ fontSize: 12, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600 }}>Cambiar contraseña (opcional)</div>
+            <div>
+              <label style={labelStyle} htmlFor="settings-current-password">Contraseña actual</label>
+              <input id="settings-current-password" type="password" value={currentPassword} onChange={e => { setCurrentPassword(e.target.value); setError('') }} placeholder="••••••••" style={inputStyle} disabled={saving} />
+            </div>
+            <div>
+              <label style={labelStyle} htmlFor="settings-new-password">Nueva contraseña</label>
+              <input id="settings-new-password" type="password" value={newPassword} onChange={e => { setNewPassword(e.target.value); setError('') }} placeholder="••••••••" style={inputStyle} disabled={saving} />
+            </div>
+            <div>
+              <label style={labelStyle} htmlFor="settings-new-password2">Repetir nueva contraseña</label>
+              <input id="settings-new-password2" type="password" value={newPassword2} onChange={e => { setNewPassword2(e.target.value); setError('') }} placeholder="••••••••" style={inputStyle} disabled={saving} />
+            </div>
 
-          {error && <div style={{ fontSize: 12, color: '#ef4444', background: '#ef444411', border: '1px solid #ef444422', borderRadius: 6, padding: '8px 12px' }}>{error}</div>}
-          {success && <div style={{ fontSize: 12, color: '#10b981', background: '#10b98111', border: '1px solid #10b98122', borderRadius: 6, padding: '8px 12px' }}>Cambios guardados correctamente.</div>}
+            {error && <div style={{ fontSize: 12, color: '#ef4444', background: '#ef444411', border: '1px solid #ef444422', borderRadius: 6, padding: '8px 12px' }}>{error}</div>}
+            {success && <div style={{ fontSize: 12, color: '#10b981', background: '#10b98111', border: '1px solid #10b98122', borderRadius: 6, padding: '8px 12px' }}>Cambios guardados correctamente.</div>}
 
-          <button type="submit" style={{ background: 'linear-gradient(135deg,#00c8ff,#7c3aed)', border: 'none', borderRadius: 8, color: '#fff', fontFamily: 'Outfit, sans-serif', fontWeight: 700, fontSize: 15, padding: '12px', cursor: 'pointer', marginTop: 4 }}>
-            Guardar cambios
-          </button>
-        </form>
+            <button type="submit" disabled={saving} style={{ background: 'linear-gradient(135deg,#00c8ff,#7c3aed)', border: 'none', borderRadius: 8, color: '#fff', fontFamily: 'Outfit, sans-serif', fontWeight: 700, fontSize: 15, padding: '12px', cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.7 : 1, marginTop: 4 }}>
+              {saving ? 'Guardando…' : 'Guardar cambios'}
+            </button>
+          </form>
+        )}
       </div>
     </div>
   )
@@ -2139,22 +1830,62 @@ function AdminPanel({
   onBack,
 }: {
   products: Product[]
-  onRefreshProducts: () => void
+  onRefreshProducts: () => Promise<void>
   onBack: () => void
 }) {
   const isMobile = useIsMobile()
   const [tab, setTab] = useState<'orders' | 'products'>('orders')
-  const [allOrders, setAllOrders] = useState(() => loadAllOrders())
 
-  const refreshOrders = () => setAllOrders(loadAllOrders())
+  // ── Pedidos ────────────────────────────────────────────────────────────────
+  const [allOrders, setAllOrders] = useState<OrderWithEmail[] | null>(null)
+  const [ordersError, setOrdersError] = useState('')
 
-  const emptyForm = { name: '', price: '', originalPrice: '', category: CATEGORIES[0].label, image: '', badge: '', description: '' }
+  const refreshOrders = () => {
+    setOrdersError('')
+    fetchAllOrders().then(setAllOrders).catch(() => setOrdersError('No pudimos cargar los pedidos.'))
+  }
+
+  useEffect(() => { refreshOrders() }, [])
+
+  const changeStatus = async (id: string, status: OrderStatus) => {
+    try {
+      await updateOrderStatusRow(id, status)
+      refreshOrders()
+    } catch {
+      setOrdersError('No pudimos actualizar el estado del pedido.')
+    }
+  }
+
+  // ── Productos: filtros ───────────────────────────────────────────────────────
+  const [filterCategory, setFilterCategory] = useState('')
+  const [filterBrand, setFilterBrand] = useState('')
+  const [filterName, setFilterName] = useState('')
+
+  const brands = Array.from(new Set(products.map(p => p.brand).filter((b): b is string => !!b))).sort()
+
+  const filteredProducts = products.filter(p => {
+    const matchCategory = !filterCategory || p.category === filterCategory
+    const matchBrand = !filterBrand || p.brand === filterBrand
+    const matchName = !filterName || p.name.toLowerCase().includes(filterName.toLowerCase())
+    return matchCategory && matchBrand && matchName
+  })
+
+  const hasProductFilters = !!(filterCategory || filterBrand || filterName)
+  const clearProductFilters = () => { setFilterCategory(''); setFilterBrand(''); setFilterName('') }
+
+  // ── Productos: formulario de alta/edición ────────────────────────────────────
+  type ImageEntry = { id: string; src: string; label: string }
+  const makeId = () => (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2))
+
+  const emptyForm = { name: '', price: '', originalPrice: '', category: CATEGORIES[0].label, brand: '', badge: '', description: '' }
   const [form, setForm] = useState(emptyForm)
+  const [images, setImages] = useState<ImageEntry[]>([])
+  const [imageUrlInput, setImageUrlInput] = useState('')
   const [editingId, setEditingId] = useState<number | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
   const [formError, setFormError] = useState('')
-
-  useEffect(() => { window.scrollTo({ top: 0 }) }, [])
+  const [uploading, setUploading] = useState(false)
+  const [saving, setSaving] = useState(false)
 
   const startEdit = (p: Product) => {
     setEditingId(p.id)
@@ -2164,54 +1895,112 @@ function AdminPanel({
       price: String(p.price),
       originalPrice: p.originalPrice ? String(p.originalPrice) : '',
       category: p.category,
-      image: p.image,
+      brand: p.brand ?? '',
       badge: p.badge ?? '',
       description: p.description ?? '',
     })
+    setImages((p.images ?? [p.image]).filter(Boolean).map(src => ({ id: makeId(), src, label: src.split('/').pop() || 'Imagen' })))
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  const cancelEdit = () => { setEditingId(null); setForm(emptyForm); setFormError('') }
+  const cancelEdit = () => { setEditingId(null); setForm(emptyForm); setImages([]); setImageUrlInput(''); setFormError('') }
 
-  const submitProduct = (e: React.FormEvent) => {
+  const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? [])
+    e.target.value = ''
+    if (files.length === 0) return
+    setUploading(true)
+    setFormError('')
+    try {
+      for (const file of files) {
+        const url = await uploadProductImage(file)
+        setImages(prev => [...prev, { id: makeId(), src: url, label: file.name }])
+      }
+    } catch {
+      setFormError('No pudimos subir alguna imagen. Probá de nuevo.')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const addImageByUrl = () => {
+    const url = imageUrlInput.trim()
+    if (!url) return
+    setImages(prev => [...prev, { id: makeId(), src: url, label: url }])
+    setImageUrlInput('')
+  }
+
+  const moveImage = (index: number, dir: -1 | 1) => {
+    setImages(prev => {
+      const next = [...prev]
+      const target = index + dir
+      if (target < 0 || target >= next.length) return prev
+      const tmp = next[index]
+      next[index] = next[target]
+      next[target] = tmp
+      return next
+    })
+  }
+
+  const removeImage = (id: string) => {
+    setImages(prev => prev.filter(img => img.id !== id))
+  }
+
+  const submitProduct = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!form.name.trim()) return setFormError('Ingresá el nombre del producto')
     const price = Number(form.price)
     if (!form.price || Number.isNaN(price) || price <= 0) return setFormError('Ingresá un precio válido')
-    if (!form.image.trim()) return setFormError('Ingresá la URL de una imagen')
+    if (images.length === 0) return setFormError('Agregá al menos una imagen')
     const originalPrice = form.originalPrice ? Number(form.originalPrice) : undefined
     if (originalPrice !== undefined && (Number.isNaN(originalPrice) || originalPrice <= price)) {
       return setFormError('El precio original debe ser mayor al precio actual')
     }
 
-    const payload = {
+    const payload: ProductInput = {
       name: form.name.trim(),
       price,
       originalPrice,
       category: form.category,
-      image: form.image.trim(),
+      brand: form.brand.trim() || undefined,
       badge: form.badge.trim() || undefined,
       description: form.description.trim() || undefined,
+      images: images.map(img => img.src),
     }
 
-    if (editingId != null) {
-      updateProduct(editingId, payload)
-    } else {
-      addProduct({ ...payload, rating: 5, reviews: 0 })
+    setSaving(true)
+    setFormError('')
+    try {
+      if (editingId != null) {
+        await updateProductRow(editingId, payload)
+      } else {
+        await insertProduct(payload)
+      }
+      await onRefreshProducts()
+      cancelEdit()
+    } catch {
+      setFormError('No pudimos guardar el producto. Probá de nuevo.')
+    } finally {
+      setSaving(false)
     }
-    onRefreshProducts()
-    cancelEdit()
   }
 
-  const handleDelete = (id: number) => {
+  const handleDelete = async (id: number) => {
     if (confirmDeleteId !== id) { setConfirmDeleteId(id); return }
-    deleteProduct(id)
-    onRefreshProducts()
-    setConfirmDeleteId(null)
-    if (editingId === id) cancelEdit()
+    try {
+      await deleteProductRow(id)
+      await onRefreshProducts()
+    } catch {
+      setFormError('No pudimos eliminar el producto.')
+    } finally {
+      setConfirmDeleteId(null)
+      if (editingId === id) cancelEdit()
+    }
   }
 
   const inputStyle: React.CSSProperties = { width: '100%', background: '#0e1117', border: '1px solid #1e2535', borderRadius: 8, color: '#e8eaf0', fontSize: 13, padding: '9px 12px', fontFamily: 'Inter, sans-serif', boxSizing: 'border-box' }
   const labelStyle: React.CSSProperties = { fontSize: 11, color: '#6b7280', fontWeight: 600, display: 'block', marginBottom: 5, textTransform: 'uppercase', letterSpacing: 0.4 }
+  const srOnlyStyle: React.CSSProperties = { position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', clip: 'rect(0,0,0,0)', whiteSpace: 'nowrap', border: 0 }
 
   return (
     <div style={{ minHeight: '100vh', background: '#07090f', padding: isMobile ? '20px 16px 60px' : '32px 40px 80px' }}>
@@ -2233,7 +2022,7 @@ function AdminPanel({
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 24, borderBottom: '1px solid #1e2535' }}>
         {[
-          { key: 'orders' as const, label: `📦 Pedidos (${allOrders.length})` },
+          { key: 'orders' as const, label: `📦 Pedidos (${allOrders?.length ?? 0})` },
           { key: 'products' as const, label: `📋 Productos (${products.length})` },
         ].map(t => (
           <button
@@ -2253,35 +2042,42 @@ function AdminPanel({
       </div>
 
       {tab === 'orders' ? (
-        allOrders.length === 0 ? (
+        ordersError ? (
+          <div style={{ textAlign: 'center', padding: '60px 0', color: '#ef4444', fontSize: 13 }}>{ordersError}</div>
+        ) : allOrders === null ? (
+          <div style={{ textAlign: 'center', padding: '60px 0', color: '#6b7280', fontSize: 13 }}>Cargando pedidos…</div>
+        ) : allOrders.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '60px 0', color: '#6b7280' }}>
             <div style={{ fontSize: 48, marginBottom: 16 }}>📦</div>
             <div style={{ fontFamily: 'Outfit, sans-serif', fontSize: 18, fontWeight: 600, color: '#4b5563' }}>Todavía no hay pedidos</div>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {allOrders.map(({ email, order }) => (
+            {allOrders.map(order => (
               <div key={order.id} style={{ background: '#0e1117', border: '1px solid #1e2535', borderRadius: 12, padding: 18 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
                   <div>
                     <div style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 700, fontSize: 14, color: '#e8eaf0' }}>{order.id}</div>
                     <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
-                      {email} · {new Date(order.date).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      {order.email} · {new Date(order.date).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' })}
                     </div>
                   </div>
-                  <select
-                    value={order.status}
-                    onChange={e => { updateOrderStatus(email, order.id, e.target.value as OrderStatus); refreshOrders() }}
-                    style={{
-                      fontSize: 12, fontWeight: 600, padding: '6px 10px', borderRadius: 999,
-                      color: STATUS_COLOR[order.status], background: STATUS_COLOR[order.status] + '1a',
-                      border: `1px solid ${STATUS_COLOR[order.status]}44`, cursor: 'pointer',
-                    }}
-                  >
-                    {(['Confirmado', 'En preparación', 'Enviado', 'Entregado'] as OrderStatus[]).map(s => (
-                      <option key={s} value={s} style={{ background: '#0e1117', color: '#e8eaf0' }}>{s}</option>
-                    ))}
-                  </select>
+                  <label>
+                    <span style={srOnlyStyle}>Estado del pedido {order.id}</span>
+                    <select
+                      value={order.status}
+                      onChange={e => changeStatus(order.id, e.target.value as OrderStatus)}
+                      style={{
+                        fontSize: 12, fontWeight: 600, padding: '6px 10px', borderRadius: 999,
+                        color: STATUS_COLOR[order.status], background: STATUS_COLOR[order.status] + '1a',
+                        border: `1px solid ${STATUS_COLOR[order.status]}44`, cursor: 'pointer',
+                      }}
+                    >
+                      {(['Confirmado', 'En preparación', 'Enviado', 'Entregado'] as OrderStatus[]).map(s => (
+                        <option key={s} value={s} style={{ background: '#0e1117', color: '#e8eaf0' }}>{s}</option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
                   {order.items.map((it, i) => (
@@ -2300,87 +2096,173 @@ function AdminPanel({
           </div>
         )
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '360px 1fr', gap: 28, alignItems: 'flex-start' }}>
-          {/* Formulario de alta/edición */}
-          <form onSubmit={submitProduct} style={{ background: '#0e1117', border: '1px solid #1e2535', borderRadius: 14, padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 700, fontSize: 16, color: '#e8eaf0' }}>
-              {editingId != null ? 'Editar producto' : '+ Nuevo producto'}
-            </div>
+        <>
+          {/* Filtros del catálogo */}
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 20 }}>
             <div>
-              <label style={labelStyle}>Nombre</label>
-              <input style={inputStyle} value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Nombre del producto" />
-            </div>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <div style={{ flex: 1 }}>
-                <label style={labelStyle}>Precio</label>
-                <input style={inputStyle} type="number" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} placeholder="0.00" />
-              </div>
-              <div style={{ flex: 1 }}>
-                <label style={labelStyle}>Precio anterior</label>
-                <input style={inputStyle} type="number" value={form.originalPrice} onChange={e => setForm(f => ({ ...f, originalPrice: e.target.value }))} placeholder="Opcional" />
-              </div>
-            </div>
-            <div>
-              <label style={labelStyle}>Categoría</label>
-              <select style={{ ...inputStyle, cursor: 'pointer' }} value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}>
+              <label style={labelStyle} htmlFor="admin-filter-category">Categoría</label>
+              <select id="admin-filter-category" value={filterCategory} onChange={e => setFilterCategory(e.target.value)} style={{ ...inputStyle, cursor: 'pointer', minWidth: 160 }}>
+                <option value="" style={{ background: '#0e1117' }}>Todas las categorías</option>
                 {CATEGORIES.map(c => <option key={c.label} value={c.label} style={{ background: '#0e1117' }}>{c.label}</option>)}
               </select>
             </div>
             <div>
-              <label style={labelStyle}>Insignia</label>
-              <select style={{ ...inputStyle, cursor: 'pointer' }} value={form.badge} onChange={e => setForm(f => ({ ...f, badge: e.target.value }))}>
-                <option value="" style={{ background: '#0e1117' }}>Sin insignia</option>
-                {['Nuevo', 'Oferta', 'Bestseller', 'Popular'].map(b => <option key={b} value={b} style={{ background: '#0e1117' }}>{b}</option>)}
+              <label style={labelStyle} htmlFor="admin-filter-brand">Marca</label>
+              <select id="admin-filter-brand" value={filterBrand} onChange={e => setFilterBrand(e.target.value)} style={{ ...inputStyle, cursor: 'pointer', minWidth: 160 }}>
+                <option value="" style={{ background: '#0e1117' }}>Todas las marcas</option>
+                {brands.map(b => <option key={b} value={b} style={{ background: '#0e1117' }}>{b}</option>)}
               </select>
             </div>
-            <div>
-              <label style={labelStyle}>URL de imagen</label>
-              <input style={inputStyle} value={form.image} onChange={e => setForm(f => ({ ...f, image: e.target.value }))} placeholder="https://..." />
+            <div style={{ flex: 1, minWidth: 180 }}>
+              <label style={labelStyle} htmlFor="admin-filter-name">Buscar por nombre</label>
+              <input id="admin-filter-name" value={filterName} onChange={e => setFilterName(e.target.value)} placeholder="Nombre del producto…" style={inputStyle} />
             </div>
-            <div>
-              <label style={labelStyle}>Descripción</label>
-              <textarea style={{ ...inputStyle, minHeight: 70, resize: 'vertical', fontFamily: 'Inter, sans-serif' }} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Descripción del producto" />
-            </div>
-            {formError && <div style={{ fontSize: 12, color: '#ef4444', background: '#ef444411', border: '1px solid #ef444422', borderRadius: 6, padding: '8px 12px' }}>{formError}</div>}
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button type="submit" style={{ flex: 1, background: 'linear-gradient(135deg,#00c8ff,#7c3aed)', border: 'none', borderRadius: 8, color: '#07090f', fontFamily: 'Outfit, sans-serif', fontWeight: 700, fontSize: 14, padding: '11px', cursor: 'pointer' }}>
-                {editingId != null ? 'Guardar cambios' : 'Agregar producto'}
+            {hasProductFilters && (
+              <button type="button" onClick={clearProductFilters} style={{ fontSize: 12, color: '#00c8ff', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: '9px 0' }}>
+                Limpiar filtros
               </button>
-              {editingId != null && (
-                <button type="button" onClick={cancelEdit} style={{ background: '#161b27', border: '1px solid #1e2535', borderRadius: 8, color: '#9ca3af', fontFamily: 'Outfit, sans-serif', fontWeight: 600, fontSize: 14, padding: '11px 16px', cursor: 'pointer' }}>
-                  Cancelar
-                </button>
-              )}
-            </div>
-          </form>
-
-          {/* Listado de productos */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {products.map(p => (
-              <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 14, background: '#0e1117', border: '1px solid #1e2535', borderRadius: 12, padding: 12, flexWrap: 'wrap' }}>
-                <img src={p.image} alt={p.name} style={{ width: 52, height: 52, borderRadius: 8, objectFit: 'cover', background: '#161b27', flexShrink: 0 }} />
-                <div style={{ flex: 1, minWidth: 140 }}>
-                  <div style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 600, fontSize: 13, color: '#e8eaf0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
-                  <div style={{ fontSize: 11, color: '#6b7280' }}>{p.category} · ${p.price.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</div>
-                </div>
-                <button onClick={() => startEdit(p)} style={{ background: '#161b27', border: '1px solid #1e2535', borderRadius: 6, color: '#9ca3af', fontSize: 12, padding: '7px 12px', cursor: 'pointer', flexShrink: 0 }}>
-                  ✏️ Editar
-                </button>
-                <button
-                  onClick={() => handleDelete(p.id)}
-                  style={{
-                    background: confirmDeleteId === p.id ? '#ef4444' : '#161b27',
-                    border: `1px solid ${confirmDeleteId === p.id ? '#ef4444' : '#1e2535'}`,
-                    borderRadius: 6, color: confirmDeleteId === p.id ? '#fff' : '#ef4444',
-                    fontSize: 12, padding: '7px 12px', cursor: 'pointer', flexShrink: 0, fontWeight: confirmDeleteId === p.id ? 700 : 400,
-                  }}
-                >
-                  {confirmDeleteId === p.id ? '¿Confirmar?' : '🗑 Eliminar'}
-                </button>
-              </div>
-            ))}
+            )}
           </div>
-        </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '360px 1fr', gap: 28, alignItems: 'flex-start' }}>
+            {/* Formulario de alta/edición */}
+            <form onSubmit={submitProduct} style={{ background: '#0e1117', border: '1px solid #1e2535', borderRadius: 14, padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 700, fontSize: 16, color: '#e8eaf0' }}>
+                {editingId != null ? 'Editar producto' : '+ Nuevo producto'}
+              </div>
+              <div>
+                <label style={labelStyle} htmlFor="admin-name">Nombre</label>
+                <input id="admin-name" style={inputStyle} value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Nombre del producto" />
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={labelStyle} htmlFor="admin-price">Precio</label>
+                  <input id="admin-price" style={inputStyle} type="number" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} placeholder="0.00" />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={labelStyle} htmlFor="admin-original-price">Precio anterior</label>
+                  <input id="admin-original-price" style={inputStyle} type="number" value={form.originalPrice} onChange={e => setForm(f => ({ ...f, originalPrice: e.target.value }))} placeholder="Opcional" />
+                </div>
+              </div>
+              <div>
+                <label style={labelStyle} htmlFor="admin-category">Categoría</label>
+                <select id="admin-category" style={{ ...inputStyle, cursor: 'pointer' }} value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}>
+                  {CATEGORIES.map(c => <option key={c.label} value={c.label} style={{ background: '#0e1117' }}>{c.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle} htmlFor="admin-brand">Marca</label>
+                <input id="admin-brand" style={inputStyle} list="admin-brand-options" value={form.brand} onChange={e => setForm(f => ({ ...f, brand: e.target.value }))} placeholder="Ej: Samsung" />
+                <datalist id="admin-brand-options">
+                  {brands.map(b => <option key={b} value={b} />)}
+                </datalist>
+              </div>
+              <div>
+                <label style={labelStyle} htmlFor="admin-badge">Insignia</label>
+                <select id="admin-badge" style={{ ...inputStyle, cursor: 'pointer' }} value={form.badge} onChange={e => setForm(f => ({ ...f, badge: e.target.value }))}>
+                  <option value="" style={{ background: '#0e1117' }}>Sin insignia</option>
+                  {['Nuevo', 'Oferta', 'Bestseller', 'Popular'].map(b => <option key={b} value={b} style={{ background: '#0e1117' }}>{b}</option>)}
+                </select>
+              </div>
+
+              {/* Imágenes */}
+              <div>
+                <label style={labelStyle} htmlFor="admin-image-files">Imágenes del producto</label>
+                <input
+                  id="admin-image-files"
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleFilesSelected}
+                  disabled={uploading}
+                  style={{ ...inputStyle, padding: '7px 8px', cursor: uploading ? 'default' : 'pointer' }}
+                />
+                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                  <label htmlFor="admin-image-url" style={srOnlyStyle}>Agregar una imagen por URL</label>
+                  <input
+                    id="admin-image-url"
+                    value={imageUrlInput}
+                    onChange={e => setImageUrlInput(e.target.value)}
+                    placeholder="…o pegá una URL de imagen"
+                    style={{ ...inputStyle, flex: 1 }}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addImageByUrl() } }}
+                  />
+                  <button type="button" onClick={addImageByUrl} style={{ background: '#161b27', border: '1px solid #1e2535', borderRadius: 8, color: '#9ca3af', fontSize: 12, padding: '0 14px', cursor: 'pointer', flexShrink: 0 }}>
+                    Agregar
+                  </button>
+                </div>
+
+                {uploading && <div style={{ fontSize: 11, color: '#00c8ff', marginTop: 8 }} role="status">Subiendo imágenes…</div>}
+
+                <div style={{ fontSize: 11, color: '#6b7280', margin: '10px 0 6px' }}>
+                  {images.length === 0 ? 'Todavía no agregaste ninguna imagen' : `${images.length} ${images.length === 1 ? 'imagen agregada' : 'imágenes agregadas'} — la primera es la principal`}
+                </div>
+
+                {images.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {images.map((img, i) => (
+                      <div key={img.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#161b27', border: '1px solid #1e2535', borderRadius: 8, padding: 6 }}>
+                        <img src={img.src} alt="" style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'cover', flexShrink: 0, background: '#0e1117' }} />
+                        <div style={{ flex: 1, minWidth: 0, fontSize: 11, color: '#e8eaf0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {i === 0 && <span style={{ color: '#00c8ff', fontWeight: 700 }}>Principal · </span>}
+                          {img.label}
+                        </div>
+                        <button type="button" onClick={() => moveImage(i, -1)} disabled={i === 0} aria-label={`Subir ${img.label} en el orden`} style={{ width: 26, height: 26, background: 'none', border: '1px solid #1e2535', borderRadius: 6, color: i === 0 ? '#3a4356' : '#9ca3af', cursor: i === 0 ? 'default' : 'pointer', fontSize: 12, flexShrink: 0 }}>↑</button>
+                        <button type="button" onClick={() => moveImage(i, 1)} disabled={i === images.length - 1} aria-label={`Bajar ${img.label} en el orden`} style={{ width: 26, height: 26, background: 'none', border: '1px solid #1e2535', borderRadius: 6, color: i === images.length - 1 ? '#3a4356' : '#9ca3af', cursor: i === images.length - 1 ? 'default' : 'pointer', fontSize: 12, flexShrink: 0 }}>↓</button>
+                        <button type="button" onClick={() => removeImage(img.id)} aria-label={`Quitar ${img.label}`} style={{ width: 26, height: 26, background: 'none', border: '1px solid #1e2535', borderRadius: 6, color: '#ef4444', cursor: 'pointer', fontSize: 12, flexShrink: 0 }}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label style={labelStyle} htmlFor="admin-description">Descripción</label>
+                <textarea id="admin-description" style={{ ...inputStyle, minHeight: 70, resize: 'vertical', fontFamily: 'Inter, sans-serif' }} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Descripción del producto" />
+              </div>
+              {formError && <div style={{ fontSize: 12, color: '#ef4444', background: '#ef444411', border: '1px solid #ef444422', borderRadius: 6, padding: '8px 12px' }}>{formError}</div>}
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button type="submit" disabled={saving || uploading} style={{ flex: 1, background: 'linear-gradient(135deg,#00c8ff,#7c3aed)', border: 'none', borderRadius: 8, color: '#07090f', fontFamily: 'Outfit, sans-serif', fontWeight: 700, fontSize: 14, padding: '11px', cursor: saving || uploading ? 'default' : 'pointer', opacity: saving || uploading ? 0.7 : 1 }}>
+                  {saving ? 'Guardando…' : editingId != null ? 'Guardar cambios' : 'Agregar producto'}
+                </button>
+                {editingId != null && (
+                  <button type="button" onClick={cancelEdit} style={{ background: '#161b27', border: '1px solid #1e2535', borderRadius: 8, color: '#9ca3af', fontFamily: 'Outfit, sans-serif', fontWeight: 600, fontSize: 14, padding: '11px 16px', cursor: 'pointer' }}>
+                    Cancelar
+                  </button>
+                )}
+              </div>
+            </form>
+
+            {/* Listado de productos */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {filteredProducts.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '40px 0', color: '#6b7280', fontSize: 13 }}>Ningún producto coincide con los filtros.</div>
+              ) : filteredProducts.map(p => (
+                <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 14, background: '#0e1117', border: '1px solid #1e2535', borderRadius: 12, padding: 12, flexWrap: 'wrap' }}>
+                  <img src={p.image} alt={p.name} style={{ width: 52, height: 52, borderRadius: 8, objectFit: 'cover', background: '#161b27', flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 140 }}>
+                    <div style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 600, fontSize: 13, color: '#e8eaf0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
+                    <div style={{ fontSize: 11, color: '#6b7280' }}>{p.brand ? `${p.brand} · ` : ''}{p.category} · ${p.price.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</div>
+                  </div>
+                  <button onClick={() => startEdit(p)} style={{ background: '#161b27', border: '1px solid #1e2535', borderRadius: 6, color: '#9ca3af', fontSize: 12, padding: '7px 12px', cursor: 'pointer', flexShrink: 0 }}>
+                    ✏️ Editar
+                  </button>
+                  <button
+                    onClick={() => handleDelete(p.id)}
+                    style={{
+                      background: confirmDeleteId === p.id ? '#ef4444' : '#161b27',
+                      border: `1px solid ${confirmDeleteId === p.id ? '#ef4444' : '#1e2535'}`,
+                      borderRadius: 6, color: confirmDeleteId === p.id ? '#fff' : '#ef4444',
+                      fontSize: 12, padding: '7px 12px', cursor: 'pointer', flexShrink: 0, fontWeight: confirmDeleteId === p.id ? 700 : 400,
+                    }}
+                  >
+                    {confirmDeleteId === p.id ? '¿Confirmar?' : '🗑 Eliminar'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
       )}
     </div>
   )
@@ -2388,16 +2270,19 @@ function AdminPanel({
 
 // ── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [user, setUser] = useState<User>(() => loadSession())
+  const [user, setUser] = useState<User>(null)
+  const [resetPasswordOpen, setResetPasswordOpen] = useState(false)
   const [loginOpen, setLoginOpen] = useState(false)
   const [cartOpen, setCartOpen] = useState(false)
   const [cart, setCart] = useState<Cart>(() => loadJSON(CART_KEY, {}))
   const [wishlist, setWishlist] = useState<number[]>(() => loadJSON(WISHLIST_KEY, []))
-  const [products, setProducts] = useState<Product[]>(() => getAllProducts())
+  const [products, setProducts] = useState<Product[]>([])
+  const [productsLoading, setProductsLoading] = useState(true)
+  const [productsError, setProductsError] = useState('')
 
-  useEffect(() => saveSession(user), [user])
   useEffect(() => saveJSON(CART_KEY, cart), [cart])
   useEffect(() => saveJSON(WISHLIST_KEY, wishlist), [wishlist])
+
   const [searchQuery, setSearchQuery] = useState('')
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
@@ -2412,10 +2297,57 @@ export default function App() {
   const isMobile = useIsMobile()
   const productsRef = useRef<HTMLDivElement>(null)
 
-  const refreshProducts = () => setProducts(getAllProducts())
+  const refreshProducts = () => {
+    setProductsError('')
+    return fetchProducts()
+      .then(setProducts)
+      .catch(() => setProductsError('No pudimos cargar el catálogo. Revisá tu conexión e intentá de nuevo.'))
+  }
 
-  const handleLogout = () => {
-    setUser(null)
+  useEffect(() => {
+    setProductsLoading(true)
+    refreshProducts().finally(() => setProductsLoading(false))
+  }, [])
+
+  // Sesión: Supabase mantiene el estado de login. Cuando cambia (login,
+  // logout, registro, o el link de "olvidé mi contraseña"), se sincroniza acá.
+  useEffect(() => {
+    let active = true
+
+    const applyUser = async (authUser: { id: string; email?: string | null } | null | undefined) => {
+      if (!authUser) {
+        if (active) setUser(null)
+        return
+      }
+      try {
+        const profile = await fetchProfile(authUser.id)
+        if (!active) return
+        setUser({
+          id: authUser.id,
+          email: authUser.email ?? '',
+          name: profile?.name || authUser.email || '',
+          isAdmin: profile?.isAdmin ?? false,
+        })
+      } catch {
+        if (active) setUser(null)
+      }
+    }
+
+    supabase.auth.getSession().then(({ data }) => applyUser(data.session?.user))
+
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') setResetPasswordOpen(true)
+      applyUser(session?.user)
+    })
+
+    return () => {
+      active = false
+      listener.subscription.unsubscribe()
+    }
+  }, [])
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
     setAdminOpen(false)
     setSettingsOpen(false)
     setOrdersOpen(false)
@@ -2449,6 +2381,21 @@ export default function App() {
     productsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
+  // Tocar el logo, favoritos, categorías o el buscador desde el panel de
+  // administración (o desde el detalle de un producto) te devuelve a la tienda.
+  const exitFullScreenViews = () => {
+    setSelectedProduct(null)
+    setAdminOpen(false)
+  }
+
+  const goHome = () => {
+    exitFullScreenViews()
+    setActiveCategory(null)
+    setSearchQuery('')
+    setShowFavorites(false)
+    setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 50)
+  }
+
   const filteredProducts = products.filter(p => {
     const matchCat = !activeCategory || p.category === activeCategory
     const matchSearch = !searchQuery || p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.category.toLowerCase().includes(searchQuery.toLowerCase())
@@ -2467,6 +2414,7 @@ export default function App() {
   const hasActiveFilters = !!(activeCategory || searchQuery || showFavorites || minPrice || maxPrice)
 
   const handleCategorySelect = (c: string | null) => {
+    exitFullScreenViews()
     setActiveCategory(c)
     setShowFavorites(false)
     setTimeout(scrollToProducts, 80)
@@ -2474,10 +2422,14 @@ export default function App() {
 
   const handleSearch = (q: string) => {
     setSearchQuery(q)
-    if (q) setTimeout(scrollToProducts, 80)
+    if (q) {
+      exitFullScreenViews()
+      setTimeout(scrollToProducts, 80)
+    }
   }
 
   const handleOpenFavorites = () => {
+    exitFullScreenViews()
     setShowFavorites(true)
     setTimeout(scrollToProducts, 80)
   }
@@ -2489,6 +2441,14 @@ export default function App() {
     setMinPrice('')
     setMaxPrice('')
   }
+
+  const cartOrderItems: OrderItem[] = Object.entries(cart)
+    .map(([id, qty]) => {
+      const p = products.find(x => x.id === Number(id))
+      return p ? { name: p.name, qty, price: p.price } : null
+    })
+    .filter((x): x is OrderItem => x !== null)
+  const cartTotal = cartOrderItems.reduce((sum, it) => sum + it.price * it.qty, 0)
 
   return (
     <div style={{ minHeight: '100vh', background: '#07090f', fontFamily: 'Inter, sans-serif' }}>
@@ -2506,6 +2466,7 @@ export default function App() {
         onOpenOrders={() => setOrdersOpen(true)}
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenAdmin={() => setAdminOpen(true)}
+        onGoHome={goHome}
       />
 
       {selectedProduct ? (
@@ -2515,7 +2476,7 @@ export default function App() {
           onToggleWishlist={() => setWishlist(prev => prev.includes(selectedProduct.id) ? prev.filter(x => x !== selectedProduct.id) : [...prev, selectedProduct.id])}
           onAddToCart={() => handleAddToCart(selectedProduct.id)}
           onBack={() => { setSelectedProduct(null); setTimeout(() => window.scrollTo({ top: 0 }), 50) }}
-          onGoHome={() => { setSelectedProduct(null); setActiveCategory(null); setShowFavorites(false); setTimeout(() => window.scrollTo({ top: 0 }), 50) }}
+          onGoHome={goHome}
           onCategoryClick={(cat) => { setSelectedProduct(null); setActiveCategory(cat); setShowFavorites(false); setTimeout(scrollToProducts, 80) }}
         />
       ) : adminOpen && user?.isAdmin ? (
@@ -2562,6 +2523,7 @@ export default function App() {
             <input
               type="number"
               placeholder="Mín"
+              aria-label="Precio mínimo"
               value={minPrice}
               onChange={e => setMinPrice(e.target.value)}
               style={{
@@ -2573,6 +2535,7 @@ export default function App() {
             <input
               type="number"
               placeholder="Máx"
+              aria-label="Precio máximo"
               value={maxPrice}
               onChange={e => setMaxPrice(e.target.value)}
               style={{
@@ -2615,6 +2578,7 @@ export default function App() {
                   <select
                     value={sortBy}
                     onChange={e => setSortBy(e.target.value as typeof sortBy)}
+                    aria-label="Ordenar productos"
                     style={{
                       background: '#0e1117', border: '1px solid #1e2535', borderRadius: 8,
                       color: '#e8eaf0', fontSize: 13, padding: '9px 32px 9px 12px',
@@ -2639,7 +2603,11 @@ export default function App() {
               </div>
             </div>
 
-            {filteredProducts.length === 0 ? (
+            {productsLoading ? (
+              <div style={{ textAlign: 'center', padding: '80px 0', color: '#6b7280', fontSize: 14 }}>Cargando catálogo…</div>
+            ) : productsError ? (
+              <div style={{ textAlign: 'center', padding: '80px 0', color: '#ef4444', fontSize: 14 }}>{productsError}</div>
+            ) : filteredProducts.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '80px 0', color: '#6b7280' }}>
                 <div style={{ fontSize: 48, marginBottom: 16 }}>🔍</div>
                 <div style={{ fontFamily: 'Outfit, sans-serif', fontSize: 20, fontWeight: 600, color: '#4b5563' }}>Sin resultados</div>
@@ -2675,7 +2643,11 @@ export default function App() {
       )}
 
       {loginOpen && (
-        <LoginModal onClose={() => setLoginOpen(false)} onLogin={setUser} />
+        <LoginModal onClose={() => setLoginOpen(false)} />
+      )}
+
+      {resetPasswordOpen && (
+        <ResetPasswordModal onClose={() => setResetPasswordOpen(false)} />
       )}
 
       {ordersOpen && user && (
@@ -2703,27 +2675,21 @@ export default function App() {
 
       {checkoutOpen && (
         <CheckoutModal
-          total={Object.entries(cart).reduce((sum, [id, qty]) => {
-            const p = products.find(x => x.id === Number(id))
-            return sum + (p ? p.price * qty : 0)
-          }, 0)}
+          total={cartTotal}
           user={user}
           onClose={() => setCheckoutOpen(false)}
-          onComplete={(info) => {
-            const items = Object.entries(cart)
-              .map(([id, qty]) => {
-                const p = products.find(x => x.id === Number(id))
-                return p ? { name: p.name, qty, price: p.price } : null
-              })
-              .filter((x): x is { name: string; qty: number; price: number } => x !== null)
-            const total = items.reduce((sum, it) => sum + it.price * it.qty, 0)
-            addOrder(info.email, {
-              id: `ORD-${Date.now().toString(36).toUpperCase()}`,
-              date: new Date().toISOString(),
-              status: 'Confirmado',
-              items,
-              total,
+          onSubmitOrder={async (info) => {
+            await createOrderRow({
+              email: info.email,
+              name: info.name,
+              address: info.address,
+              city: info.city,
+              items: cartOrderItems,
+              total: cartTotal,
+              userId: user?.id,
             })
+          }}
+          onComplete={() => {
             setCart({})
             setCheckoutOpen(false)
             setCartOpen(false)
