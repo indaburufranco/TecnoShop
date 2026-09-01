@@ -173,6 +173,11 @@ drop policy if exists orders_update_admin on public.orders;
 create policy orders_update_admin on public.orders
   for update using (exists (select 1 from public.profiles where profiles.id = auth.uid() and profiles.is_admin));
 
+-- Solo el admin puede borrar un pedido.
+drop policy if exists orders_delete_admin on public.orders;
+create policy orders_delete_admin on public.orders
+  for delete using (exists (select 1 from public.profiles where profiles.id = auth.uid() and profiles.is_admin));
+
 -- Recalcula el total de cada pedido a partir del precio real de los
 -- productos (no del que mande el cliente), para que no se pueda inventar un
 -- total más bajo llamando directo a la API. Si algún item no matchea ningún
