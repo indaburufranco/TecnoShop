@@ -127,6 +127,7 @@ function Stars({ rating }: { rating: number }) {
 // ── Navbar ────────────────────────────────────────────────────────────────────
 function Navbar({
   products,
+  categories,
   onOpenLogin,
   user,
   onLogout,
@@ -142,6 +143,7 @@ function Navbar({
   onGoHome,
 }: {
   products: Product[]
+  categories: { label: string; icon: string }[]
   onOpenLogin: () => void
   user: User
   onLogout: () => void
@@ -262,7 +264,7 @@ function Navbar({
               🔍 Todas las categorías
             </div>
             <div style={{ height: 1, background: '#1e2535', margin: '4px 16px' }} />
-            {CATEGORIES.map(c => (
+            {categories.map(c => (
               <div
                 key={c.label}
                 onClick={() => { onCategorySelect(c.label); setCatOpen(false) }}
@@ -1826,10 +1828,12 @@ function SettingsModal({
 // ── Panel de administración ────────────────────────────────────────────────────
 function AdminPanel({
   products,
+  categories,
   onRefreshProducts,
   onBack,
 }: {
   products: Product[]
+  categories: { label: string; icon: string }[]
   onRefreshProducts: () => Promise<void>
   onBack: () => void
 }) {
@@ -1862,6 +1866,7 @@ function AdminPanel({
   const [filterName, setFilterName] = useState('')
 
   const brands = Array.from(new Set(products.map(p => p.brand).filter((b): b is string => !!b))).sort()
+  const productCategories = Array.from(new Set(products.map(p => p.category))).sort()
 
   const filteredProducts = products.filter(p => {
     const matchCategory = !filterCategory || p.category === filterCategory
@@ -1877,7 +1882,7 @@ function AdminPanel({
   type ImageEntry = { id: string; src: string; label: string }
   const makeId = () => (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2))
 
-  const emptyForm = { name: '', price: '', originalPrice: '', category: CATEGORIES[0].label, brand: '', badge: '', description: '' }
+  const emptyForm = { name: '', price: '', originalPrice: '', category: categories[0]?.label ?? '', brand: '', badge: '', description: '' }
   const [form, setForm] = useState(emptyForm)
   const [images, setImages] = useState<ImageEntry[]>([])
   const [imageUrlInput, setImageUrlInput] = useState('')
@@ -2103,7 +2108,7 @@ function AdminPanel({
               <label style={labelStyle} htmlFor="admin-filter-category">Categoría</label>
               <select id="admin-filter-category" value={filterCategory} onChange={e => setFilterCategory(e.target.value)} style={{ ...inputStyle, cursor: 'pointer', minWidth: 160 }}>
                 <option value="" style={{ background: '#0e1117' }}>Todas las categorías</option>
-                {CATEGORIES.map(c => <option key={c.label} value={c.label} style={{ background: '#0e1117' }}>{c.label}</option>)}
+                {productCategories.map(c => <option key={c} value={c} style={{ background: '#0e1117' }}>{c}</option>)}
               </select>
             </div>
             <div>
@@ -2146,9 +2151,10 @@ function AdminPanel({
               </div>
               <div>
                 <label style={labelStyle} htmlFor="admin-category">Categoría</label>
-                <select id="admin-category" style={{ ...inputStyle, cursor: 'pointer' }} value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}>
-                  {CATEGORIES.map(c => <option key={c.label} value={c.label} style={{ background: '#0e1117' }}>{c.label}</option>)}
-                </select>
+                <input id="admin-category" style={inputStyle} list="admin-category-options" value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} placeholder="Ej: Laptops & PCs" />
+                <datalist id="admin-category-options">
+                  {categories.map(c => <option key={c.label} value={c.label} />)}
+                </datalist>
               </div>
               <div>
                 <label style={labelStyle} htmlFor="admin-brand">Marca</label>
@@ -2413,6 +2419,17 @@ export default function App() {
 
   const hasActiveFilters = !!(activeCategory || searchQuery || showFavorites || minPrice || maxPrice)
 
+  // Categorías curadas (con ícono) + cualquier categoría nueva que el admin
+  // haya cargado en un producto y todavía no tenga ícono asignado — así una
+  // categoría nueva queda disponible en toda la tienda apenas se usa.
+  const categoryList = [
+    ...CATEGORIES,
+    ...Array.from(new Set(products.map(p => p.category)))
+      .filter(c => !CATEGORIES.some(cat => cat.label === c))
+      .sort()
+      .map(label => ({ label, icon: '🏷️' })),
+  ]
+
   const handleCategorySelect = (c: string | null) => {
     exitFullScreenViews()
     setActiveCategory(c)
@@ -2454,6 +2471,7 @@ export default function App() {
     <div style={{ minHeight: '100vh', background: '#07090f', fontFamily: 'Inter, sans-serif' }}>
       <Navbar
         products={products}
+        categories={categoryList}
         onOpenLogin={() => setLoginOpen(true)}
         user={user}
         onLogout={handleLogout}
@@ -2480,7 +2498,7 @@ export default function App() {
           onCategoryClick={(cat) => { setSelectedProduct(null); setActiveCategory(cat); setShowFavorites(false); setTimeout(scrollToProducts, 80) }}
         />
       ) : adminOpen && user?.isAdmin ? (
-        <AdminPanel products={products} onRefreshProducts={refreshProducts} onBack={() => setAdminOpen(false)} />
+        <AdminPanel products={products} categories={categoryList} onRefreshProducts={refreshProducts} onBack={() => setAdminOpen(false)} />
       ) : (
         <>
           <Carousel onCategoryFilter={(cat) => { setActiveCategory(cat); setTimeout(scrollToProducts, 80) }} />
@@ -2499,7 +2517,7 @@ export default function App() {
             >
               Todos
             </button>
-            {CATEGORIES.map(c => (
+            {categoryList.map(c => (
               <button
                 key={c.label}
                 onClick={() => handleCategorySelect(c.label)}
