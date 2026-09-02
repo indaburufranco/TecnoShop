@@ -123,7 +123,7 @@ security definer set search_path = public
 as $$
 begin
   if exists (select 1 from public.profiles where is_admin) then
-    raise exception 'Ya existe un administrador; usa el panel de administración para promover otras cuentas.';
+    raise exception 'Ya existe un administrador. La app no tiene un panel para promover otras cuentas — hacelo desde el SQL Editor: update public.profiles set is_admin = true where id = (select id from auth.users where email = ''nueva-cuenta@ejemplo.com'');';
   end if;
 
   alter table public.profiles disable trigger prevent_self_promote_trigger;
@@ -178,11 +178,22 @@ drop policy if exists orders_delete_admin on public.orders;
 create policy orders_delete_admin on public.orders
   for delete using (exists (select 1 from public.profiles where profiles.id = auth.uid() and profiles.is_admin));
 
--- Recalcula el total de cada pedido a partir del precio real de los
--- productos (no del que mande el cliente), para que no se pueda inventar un
--- total más bajo llamando directo a la API. Si algún item no matchea ningún
--- producto (por ejemplo uno viejo ya borrado/renombrado), deja el total tal
--- cual vino, para no romper pedidos legítimos.
+-- Antes de aceptar un pedido nuevo: 1) frena ráfagas de pedidos desde el
+-- mismo email (anti-spam, ver más abajo) y 2) recalcula el total a partir
+-- del precio real de cada producto — matcheando por `id`, no por nombre —
+-- en vez de confiar en el total que mande el cliente, para que no se pueda
+-- inventar un total más bajo llamando directo a la API.
+--
+-- A diferencia de la versión anterior de esta función: si algún item no
+-- matchea ningún producto real por id (o trae una cantidad inválida), el
+-- pedido entero se RECHAZA en vez de dejar pasar el total tal cual vino.
+-- Ese "fail open" era justo lo que permitía eludir el recálculo: alcanzaba
+-- con mandar un item cuyo nombre no matcheara exacto (mayúsculas, espacios,
+-- producto renombrado) para que el total quedara sin tocar. Un pedido
+-- legítimo siempre se arma a partir de productos que la propia página
+-- acaba de mostrar, así que un item que no matchea solo puede ser un dato
+-- corrupto o un intento de manipular el pedido — en ambos casos, lo
+-- correcto es no crearlo.
 create or replace function public.recompute_order_total()
 returns trigger
 language plpgsql
@@ -191,28 +202,59 @@ as $$
 declare
   computed numeric(10, 2) := 0;
   item jsonb;
+  item_id bigint;
+  item_qty int;
   matched_price numeric(10, 2);
-  all_matched boolean := true;
+  recent_count int;
 begin
-  for item in select * from jsonb_array_elements(new.items)
-  loop
-    select price into matched_price
-    from public.products
-    where name = (item ->> 'name')
-    limit 1;
+  if new.email is null or new.email !~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$' then
+    raise exception 'Email inválido.';
+  end if;
+  new.email := lower(new.email);
 
-    if matched_price is null then
-      all_matched := false;
-      exit;
-    end if;
+  -- Anti-spam: el checkout de invitado no requiere sesión, así que
+  -- cualquiera podría llamar a la API una y otra vez para llenar la tabla
+  -- de pedidos. Sin login ni IP disponibles a este nivel, el email es la
+  -- única señal razonable para frenar ráfagas (no es infalible: alcanza
+  -- con cambiar de email para esquivarlo, pero corta el caso simple de
+  -- abuso/spam automatizado).
+  select count(*) into recent_count
+  from public.orders
+  where email = new.email and created_at > now() - interval '10 minutes';
 
-    computed := computed + matched_price * coalesce((item ->> 'qty')::int, 1);
-  end loop;
-
-  if all_matched then
-    new.total := computed;
+  if recent_count >= 8 then
+    raise exception 'Se detectaron demasiados pedidos seguidos con este email. Esperá unos minutos e intentá de nuevo.';
   end if;
 
+  if new.items is null or jsonb_typeof(new.items) <> 'array' or jsonb_array_length(new.items) = 0 then
+    raise exception 'El pedido no tiene productos.';
+  end if;
+
+  for item in select * from jsonb_array_elements(new.items)
+  loop
+    begin
+      item_id := (item ->> 'id')::bigint;
+      item_qty := (item ->> 'qty')::int;
+    exception when others then
+      raise exception 'Uno o más productos de tu carrito ya no están disponibles. Actualizá la página e intentá de nuevo.';
+    end;
+
+    if item_id is null or item_qty is null or item_qty < 1 or item_qty > 999 then
+      raise exception 'Uno o más productos de tu carrito ya no están disponibles. Actualizá la página e intentá de nuevo.';
+    end if;
+
+    select price into matched_price
+    from public.products
+    where id = item_id;
+
+    if matched_price is null then
+      raise exception 'Uno o más productos de tu carrito ya no están disponibles. Actualizá la página e intentá de nuevo.';
+    end if;
+
+    computed := computed + matched_price * item_qty;
+  end loop;
+
+  new.total := computed;
   return new;
 end;
 $$;
@@ -222,14 +264,39 @@ create trigger recompute_order_total
   before insert on public.orders
   for each row execute procedure public.recompute_order_total();
 
+-- Acelera el conteo de "pedidos recientes por email" de arriba, que si no
+-- tendría que recorrer toda la tabla de pedidos en cada pedido nuevo.
+create index if not exists orders_email_created_at_idx on public.orders (email, created_at);
+
 -- ── Permisos base ────────────────────────────────────────────────────────────
 -- Las políticas de arriba (RLS) deciden QUÉ filas puede tocar cada rol, pero
 -- Postgres además exige el permiso de base sobre la tabla en sí — sin esto,
--- la operación se bloquea antes de llegar a evaluar las políticas.
+-- la operación se bloquea antes de llegar a evaluar las políticas. Acá se
+-- otorga el mínimo por rol (en vez de los mismos 4 permisos a los dos
+-- roles): así, si algún día se borra o rompe una política de RLS por
+-- error, el permiso de base sigue sin alcanzar para una escritura que un
+-- rol nunca debería poder hacer — es una segunda capa, no la única.
 grant usage on schema public to anon, authenticated;
-grant select, insert, update, delete on public.products to anon, authenticated;
-grant select, insert, update, delete on public.orders to anon, authenticated;
-grant select, insert, update, delete on public.profiles to anon, authenticated;
+
+-- products: cualquiera lee el catálogo; solo un rol autenticado puede
+-- escribir (y entre esos, RLS ya filtra a que sea admin).
+grant select on public.products to anon;
+grant select, insert, update, delete on public.products to authenticated;
+
+-- orders: un anónimo únicamente puede crear un pedido (checkout de
+-- invitado) — ninguna política de select le muestra una fila sin sesión,
+-- así que ni siquiera necesita el permiso de leer. Autenticado puede leer
+-- los suyos e insertar los propios; update/delete quedan filtrados a admin
+-- por RLS.
+grant insert on public.orders to anon;
+grant select, insert, update, delete on public.orders to authenticated;
+
+-- profiles: un anónimo no tiene ningún motivo para tocar esta tabla (RLS
+-- lo bloquearía igual). Autenticado solo puede ver/editar su propio
+-- perfil — no existe política de insert ni de delete: la fila se crea
+-- sola vía el trigger on_auth_user_created, que corre con privilegios
+-- elevados y no depende de este grant.
+grant select, update on public.profiles to authenticated;
 
 -- ── Storage: imágenes de productos ───────────────────────────────────────────
 

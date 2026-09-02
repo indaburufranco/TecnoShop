@@ -26,6 +26,7 @@ export interface Product {
 export type OrderStatus = 'Confirmado' | 'En preparación' | 'Enviado' | 'Entregado'
 
 export interface OrderItem {
+  id: number
   name: string
   qty: number
   price: number

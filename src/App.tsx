@@ -1312,8 +1312,18 @@ function CheckoutModal({
     try {
       await onSubmitOrder({ name: form.name, email: form.email, address: form.address, city: form.city })
       setStep('done')
-    } catch {
-      setSubmitError('No pudimos confirmar tu pedido. Probá de nuevo en unos segundos.')
+    } catch (err) {
+      // El backend (trigger de Supabase) rechaza el pedido con un mensaje
+      // legible cuando el carrito quedó desactualizado (producto borrado o
+      // cambiado) o si se detecta demasiados pedidos seguidos desde el mismo
+      // email; se lo mostramos tal cual en vez de un genérico. Cualquier
+      // otro error (red, etc.) cae al mensaje genérico de antes.
+      const message = err instanceof Error ? err.message : ''
+      setSubmitError(
+        message && (message.includes('carrito') || message.includes('pedidos seguidos'))
+          ? message
+          : 'No pudimos confirmar tu pedido. Probá de nuevo en unos segundos.'
+      )
       setStep('form')
     }
   }
@@ -2462,7 +2472,7 @@ export default function App() {
   const cartOrderItems: OrderItem[] = Object.entries(cart)
     .map(([id, qty]) => {
       const p = products.find(x => x.id === Number(id))
-      return p ? { name: p.name, qty, price: p.price } : null
+      return p ? { id: p.id, name: p.name, qty, price: p.price } : null
     })
     .filter((x): x is OrderItem => x !== null)
   const cartTotal = cartOrderItems.reduce((sum, it) => sum + it.price * it.qty, 0)
