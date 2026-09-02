@@ -60,6 +60,12 @@ body {
   animation: shimmer 1.4s ease-in-out infinite;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+}
+
 /* Quitar flechas nativas de los inputs numéricos (filtro de precio) */
 input[type='number']::-webkit-outer-spin-button,
 input[type='number']::-webkit-inner-spin-button {
