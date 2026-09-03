@@ -537,6 +537,9 @@ function Carousel({ onCategoryFilter }: { onCategoryFilter: (category: string) =
   const isMobile = useIsMobile()
 
   const start = () => {
+    // No arranca el auto-avance si el usuario pidió menos movimiento a nivel
+    // sistema: los dots y las flechas siguen andando igual para navegar a mano.
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) return
     intervalRef.current = setInterval(() => setCurrent(p => (p + 1) % CAROUSEL_SLIDES.length), 5000)
   }
   const stop = () => { if (intervalRef.current) clearInterval(intervalRef.current) }
