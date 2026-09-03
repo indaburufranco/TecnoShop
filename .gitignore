@@ -11,3 +11,7 @@ logs/
 *.log
 .claude-replay.*
 .tmp-*
+
+# Historial personal de queries pegadas en el SQL Editor de Supabase — puede
+# tener contraseñas u otros secretos en texto plano, nunca debe subirse.
+/SQL/
